@@ -100,10 +100,11 @@ func getFrames(rows *sql.Rows, limit int64, fillMode *data.FillMissing, query *Q
 	if err != nil {
 		return nil, err
 	}
-
-	frame.Meta = &data.FrameMeta{
-		ExecutedQueryString: query.RawSQL,
+	if frame.Meta == nil {
+		frame.Meta = &data.FrameMeta{}
 	}
+
+	frame.Meta.ExecutedQueryString = query.RawSQL
 
 	if query.Format == FormatOptionTable {
 		return data.Frames{frame}, nil
