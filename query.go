@@ -87,7 +87,7 @@ func query(db *sql.DB, fillMode *data.FillMissing, query *Query) (data.Frames, e
 	}()
 
 	// Convert the response to frames
-	res, err := getFrames(rows, query.MaxDataPoints, fillMode, query)
+	res, err := getFrames(rows, -1, fillMode, query)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Could not process SQL results")
 	}
