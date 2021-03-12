@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"log"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
@@ -26,12 +27,10 @@ type sqldatasource struct {
 // NewDatasource creates a new `sqldatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
 func (ds *Datasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	log.Println("NewDatasource")
 	db, err := ds.c.Connect(settings)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := db.Ping(); err != nil {
+		log.Println(err)
 		return nil, err
 	}
 
