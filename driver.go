@@ -5,6 +5,7 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 )
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
@@ -14,4 +15,5 @@ type Driver interface {
 	Connect(backend.DataSourceInstanceSettings) (*sql.DB, error)
 	FillMode() *data.FillMissing
 	Macros() Macros
+	StringConverters() []sqlutil.StringConverter
 }
