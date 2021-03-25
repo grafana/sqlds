@@ -1,3 +1,5 @@
+[![Build Status](https://drone.grafana.net/api/badges/grafana/sqlds/status.svg)](https://drone.grafana.net/grafana/sqlds)
+
 # sqlds
 
 `sqlds` stands for `SQL Datasource`.
