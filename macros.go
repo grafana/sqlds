@@ -63,7 +63,7 @@ func interpolate(driver Driver, query *Query) (string, error) {
 			return "", err
 		}
 
-		rawSQL = strings.Replace(rawSQL, matches[0], res, 1)
+		rawSQL = strings.Replace(rawSQL, matches[0], res, -1)
 	}
 
 	return rawSQL, nil
