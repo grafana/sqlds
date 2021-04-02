@@ -137,6 +137,12 @@ func (ds *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReque
 func (ds *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	h, err := ds.im.Get(req.PluginContext)
 	if err != nil {
+		if err.Error() != "" {
+			return &backend.CheckHealthResult{
+				Status:  backend.HealthStatusError,
+				Message: err.Error(),
+			}, nil
+		}
 		return nil, err
 	}
 
