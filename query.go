@@ -62,12 +62,23 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 	}, nil
 }
 
+// getErrorFrameFromQuery returns a error frames with empty data and meta fields
+func getErrorFrameFromQuery(query *Query) data.Frames {
+	frames := data.Frames{}
+	frame := data.NewFrame("Error")
+	frame.Meta = &data.FrameMeta{
+		ExecutedQueryString: query.RawSQL,
+	}
+	frames = append(frames, frame)
+	return frames
+}
+
 // query sends the query to the sql.DB and converts the rows to a dataframe.
 func query(db *sql.DB, converters []sqlutil.StringConverter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Query the rows from the database
 	rows, err := db.Query(query.RawSQL)
 	if err != nil {
-		return nil, errors.Wrap(ErrorQuery, err.Error())
+		return getErrorFrameFromQuery(query), errors.Wrap(ErrorQuery, err.Error())
 	}
 
 	// Check for an error response
@@ -75,9 +86,9 @@ func query(db *sql.DB, converters []sqlutil.StringConverter, fillMode *data.Fill
 		if err == sql.ErrNoRows {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
-			return nil, errors.WithMessage(err, "No results from query")
+			return getErrorFrameFromQuery(query), errors.WithMessage(err, "No results from query")
 		}
-		return nil, errors.WithMessage(err, "Error response from database")
+		return getErrorFrameFromQuery(query), errors.WithMessage(err, "Error response from database")
 	}
 
 	defer func() {
