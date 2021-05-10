@@ -45,25 +45,27 @@ func interpolate(driver Driver, query *Query) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		matches := rgx.FindAllStringSubmatch(rawSQL, -1)
+		for _, match := range matches {
+			if len(match) == 0 {
+				// There were no matches for this macro
+				continue
+			}
 
-		matches := rgx.FindStringSubmatch(query.RawSQL)
-		if len(matches) == 0 {
-			// There were no matches for this macro
-			continue
+			if len(match) == 1 {
+				// This macro has no arguments
+				return "", ErrorNoArguments
+			}
+
+			args := trimAll(strings.Split(match[1], ","))
+			res, err := macro(query.WithSQL(rawSQL), args)
+			if err != nil {
+				return "", err
+			}
+
+			rawSQL = strings.Replace(rawSQL, match[0], res, -1)
 		}
 
-		if len(matches) == 1 {
-			// This macro has no arguments
-			return "", ErrorNoArguments
-		}
-
-		args := trimAll(strings.Split(matches[1], ","))
-		res, err := macro(query.WithSQL(rawSQL), args)
-		if err != nil {
-			return "", err
-		}
-
-		rawSQL = strings.Replace(rawSQL, matches[0], res, -1)
 	}
 
 	return rawSQL, nil
