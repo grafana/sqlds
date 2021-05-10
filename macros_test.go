@@ -2,11 +2,14 @@ package sqlds
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
-	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil/v2"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type MockDB struct{}
@@ -17,43 +20,50 @@ func (h *MockDB) Connect(backend.DataSourceInstanceSettings) (db *sql.DB, err er
 func (h *MockDB) FillMode() (mode *data.FillMissing) {
 	return
 }
-func (h *MockDB) Converters() (sc []sqlutil.Converter) {
+func (h *MockDB) StringConverters() (sc []sqlutil.StringConverter) {
 	return
-}
-
-// fooMacro will replace foo with bar in the query
-func fooMacro(query *Query, args []string) (out string, err error) {
-	return "bar", nil
 }
 func (h *MockDB) Macros() (macros Macros) {
 	return map[string]MacroFunc{
-		"foo": fooMacro,
+		"foo": func(query *Query, args []string) (out string, err error) {
+			return "bar", nil
+		},
+		"params": func(query *Query, args []string) (out string, err error) {
+			if args[0] != "" {
+				return "bar_" + args[0], nil
+			}
+			return "bar", nil
+		},
 	}
 }
 
 func TestInterpolate(t *testing.T) {
 	type test struct {
+		name   string
 		input  string
 		output string
 	}
 	tests := []test{
-		{input: "select * from foo", output: "select * from foo"},                   // keyword without macro syntax
-		{input: "select * from $__foo()", output: "select * from bar"},              // macro
-		{input: "select '$__foo()' from $__foo()", output: "select 'bar' from bar"}, // multiple instances of macro
-		{input: "select * from $__foo()$__foo()", output: "select * from barbar"},   // macro
-		{input: "select * from $__foo", output: "select * from $__foo"},             // incorrect macro
+		{input: "select * from foo", output: "select * from foo", name: "macro with incorrect syntax"},
+		{input: "select * from $__foo()", output: "select * from bar", name: "correct macro"},
+		{input: "select '$__foo()' from $__foo()", output: "select 'bar' from bar", name: "multiple instances of same macro"},
+		{input: "select * from $__foo()$__foo()", output: "select * from barbar", name: "multiple instances of same macro without space"},
+		{input: "select * from $__foo", output: "select * from $__foo", name: "macro without paranthesis"},
+		{input: "select * from $__params()", output: "select * from bar", name: "macro without params"},
+		{input: "select * from $__params(hello)", output: "select * from bar_hello", name: "with param"},
+		{input: "select * from $__params(hello) AND $__params(hello)", output: "select * from bar_hello AND bar_hello", name: "same macro multiple times with same param"},
+		{input: "select * from $__params(hello) AND $__params(world)", output: "select * from bar_hello AND bar_world", name: "same macro multiple times with different param"},
+		{input: "select * from $__params(world) AND $__foo() AND $__params(hello)", output: "select * from bar_world AND bar AND bar_hello", name: "different macros with different params"},
 	}
-	for _, tc := range tests {
+	for i, tc := range tests {
 		driver := MockDB{}
-		query := &Query{
-			RawSQL: tc.input,
-		}
-		interpolatedQuery, err := interpolate(&driver, query)
-		if err != nil {
-			t.Errorf("Error while interpolation")
-		}
-		if interpolatedQuery != tc.output {
-			t.Errorf("Expected %s not found", tc.output)
-		}
+		t.Run(fmt.Sprintf("[%d/%d] %s", i+1, len(tests), tc.name), func(t *testing.T) {
+			query := &Query{
+				RawSQL: tc.input,
+			}
+			interpolatedQuery, err := interpolate(&driver, query)
+			require.Nil(t, err)
+			assert.Equal(t, tc.output, interpolatedQuery)
+		})
 	}
 }
