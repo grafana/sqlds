@@ -74,7 +74,7 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 }
 
 // query sends the query to the sql.DB and converts the rows to a dataframe.
-func query(db *sql.DB, converters []sqlutil.StringConverter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+func query(db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Query the rows from the database
 	rows, err := db.Query(query.RawSQL)
 	if err != nil {
@@ -106,8 +106,8 @@ func query(db *sql.DB, converters []sqlutil.StringConverter, fillMode *data.Fill
 	return res, nil
 }
 
-func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.StringConverter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
-	frame, _, err := sqlutil.FrameFromRows(rows, limit, converters...)
+func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+	frame, err := sqlutil.FrameFromRows(rows, limit, converters...)
 	if err != nil {
 		return nil, err
 	}

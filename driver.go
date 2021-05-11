@@ -15,5 +15,5 @@ type Driver interface {
 	Connect(backend.DataSourceInstanceSettings) (*sql.DB, error)
 	FillMode() *data.FillMissing
 	Macros() Macros
-	StringConverters() []sqlutil.StringConverter
+	Converters() []sqlutil.Converter
 }

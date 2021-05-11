@@ -20,7 +20,7 @@ func (h *MockDB) Connect(backend.DataSourceInstanceSettings) (db *sql.DB, err er
 func (h *MockDB) FillMode() (mode *data.FillMissing) {
 	return
 }
-func (h *MockDB) StringConverters() (sc []sqlutil.StringConverter) {
+func (h *MockDB) Converters() (sc []sqlutil.Converter) {
 	return
 }
 func (h *MockDB) Macros() (macros Macros) {
