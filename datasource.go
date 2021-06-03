@@ -56,30 +56,28 @@ func NewDatasource(c Driver) datasource.ServeOpts {
 // QueryData creates the Responses list and executes each query
 func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	var (
-		response = backend.NewQueryDataResponse()
-		mtx      = sync.Mutex{}
+		response = NewResponse(backend.NewQueryDataResponse())
 		wg       = sync.WaitGroup{}
 	)
 
 	wg.Add(len(req.Queries))
+
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
-		go func(query backend.DataQuery, mtx *sync.Mutex, wg *sync.WaitGroup) {
+		go func(query backend.DataQuery) {
 			frames, err := ds.handleQuery(query)
 
-			mtx.Lock()
-			response.Responses[query.RefID] = backend.DataResponse{
+			response.Set(query.RefID, backend.DataResponse{
 				Frames: frames,
 				Error:  err,
-			}
-			mtx.Unlock()
+			})
 
 			wg.Done()
-		}(q, &mtx, &wg)
+		}(q)
 	}
 
 	wg.Wait()
-	return response, nil
+	return response.Response(), nil
 
 }
 
