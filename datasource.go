@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"sync"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
@@ -54,18 +55,30 @@ func NewDatasource(c Driver) datasource.ServeOpts {
 
 // QueryData creates the Responses list and executes each query
 func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
-	// create response struct
-	response := backend.NewQueryDataResponse()
+	var (
+		response = backend.NewQueryDataResponse()
+		mtx      = sync.Mutex{}
+		wg       = sync.WaitGroup{}
+	)
 
+	wg.Add(len(req.Queries))
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
-		frames, err := ds.handleQuery(q)
-		response.Responses[q.RefID] = backend.DataResponse{
-			Frames: frames,
-			Error:  err,
-		}
+		go func(query backend.DataQuery, mtx *sync.Mutex, wg *sync.WaitGroup) {
+			frames, err := ds.handleQuery(query)
+
+			mtx.Lock()
+			response.Responses[query.RefID] = backend.DataResponse{
+				Frames: frames,
+				Error:  err,
+			}
+			mtx.Unlock()
+
+			wg.Done()
+		}(q, &mtx, &wg)
 	}
 
+	wg.Wait()
 	return response, nil
 
 }
