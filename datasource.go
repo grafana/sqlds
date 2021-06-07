@@ -41,6 +41,7 @@ func NewDatasource(c Driver) *sqldatasource {
 
 // Dispose cleans up datasource instance resources.
 func (ds *sqldatasource) Dispose() {
+	ds.db.Close()
 }
 
 // QueryData creates the Responses list and executes each query
