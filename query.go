@@ -28,6 +28,7 @@ type Query struct {
 	RawSQL string            `json:"rawSql"`
 	Format FormatQueryOption `json:"format"`
 
+	RefID         string            `json:"-"`
 	Interval      time.Duration     `json:"-"`
 	TimeRange     backend.TimeRange `json:"-"`
 	MaxDataPoints int64             `json:"-"`
@@ -38,6 +39,7 @@ type Query struct {
 func (q *Query) WithSQL(query string) *Query {
 	return &Query{
 		RawSQL:        query,
+		RefID:         q.RefID,
 		Interval:      q.Interval,
 		TimeRange:     q.TimeRange,
 		MaxDataPoints: q.MaxDataPoints,
@@ -56,6 +58,7 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 	return &Query{
 		RawSQL:        model.RawSQL,
 		Format:        model.Format,
+		RefID:         query.RefID,
 		Interval:      query.Interval,
 		TimeRange:     query.TimeRange,
 		MaxDataPoints: query.MaxDataPoints,
@@ -65,7 +68,7 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 // getErrorFrameFromQuery returns a error frames with empty data and meta fields
 func getErrorFrameFromQuery(query *Query) data.Frames {
 	frames := data.Frames{}
-	frame := data.NewFrame("Error")
+	frame := data.NewFrame(query.RefID)
 	frame.Meta = &data.FrameMeta{
 		ExecutedQueryString: query.RawSQL,
 	}
@@ -108,6 +111,7 @@ func query(db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissin
 
 func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	frame, err := sqlutil.FrameFromRows(rows, limit, converters...)
+	frame.Name = query.RefID
 	if err != nil {
 		return nil, err
 	}

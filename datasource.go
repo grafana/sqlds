@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-
 type sqldatasource struct {
 	db       *sql.DB
 	c        Driver
@@ -26,9 +25,9 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 		return nil, err
 	}
 	ds.db = db
- 	ds.settings = settings
-	
-	 return ds, nil
+	ds.settings = settings
+
+	return ds, nil
 }
 
 // NewDatasource initializes the Datasource wrapper and instance manager
@@ -37,7 +36,6 @@ func NewDatasource(c Driver) *sqldatasource {
 		c: c,
 	}
 }
-
 
 // Dispose cleans up datasource instance resources.
 func (ds *sqldatasource) Dispose() {
