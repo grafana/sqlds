@@ -3,10 +3,14 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"path"
 	"sync"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/pkg/errors"
 )
@@ -15,6 +19,9 @@ type sqldatasource struct {
 	db       *sql.DB
 	c        Driver
 	settings backend.DataSourceInstanceSettings
+
+	backend.CallResourceHandler
+	Completable
 }
 
 // NewDatasource creates a new `sqldatasource`.
@@ -26,6 +33,9 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	}
 	ds.db = db
 	ds.settings = settings
+	mux := http.NewServeMux()
+	ds.registerRoutes(mux)
+	ds.CallResourceHandler = httpadapter.New(mux)
 
 	return ds, nil
 }
@@ -117,4 +127,55 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
 	}, nil
+}
+
+func (ds *sqldatasource) handle(resource string) func(rw http.ResponseWriter, req *http.Request) {
+	return func(rw http.ResponseWriter, req *http.Request) {
+		if ds.Completable == nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			_, err := rw.Write([]byte("not implemented"))
+			if err != nil {
+				backend.Logger.Error(err.Error())
+			}
+		}
+
+		var res []string
+		var err error
+		switch resource {
+		case "tables":
+			res, err = ds.Completable.Tables(req.Context(), ds.db)
+		case "schemas":
+			res, err = ds.Completable.Schemas(req.Context(), ds.db)
+		case "columns":
+			table := path.Base(req.URL.Path)
+			res, err = ds.Completable.Columns(req.Context(), ds.db, table)
+		}
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			_, err := rw.Write([]byte(err.Error()))
+			if err != nil {
+				backend.Logger.Error(err.Error())
+			}
+		}
+
+		resJSON, err := json.Marshal(res)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			_, err := rw.Write([]byte(err.Error()))
+			if err != nil {
+				backend.Logger.Error(err.Error())
+			}
+		}
+		rw.Header().Add("Content-Type", "application/json")
+		_, err = rw.Write(resJSON)
+		if err != nil {
+			backend.Logger.Error(err.Error())
+		}
+	}
+}
+
+func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/tables", ds.handle("tables"))
+	mux.HandleFunc("/schemas", ds.handle("schemas"))
+	mux.HandleFunc("/columns/", ds.handle("columns"))
 }
