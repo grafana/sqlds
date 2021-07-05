@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io/ioutil"
 	"net/http"
-	"path"
 	"sync"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -129,14 +129,23 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	}, nil
 }
 
+func handleError(rw http.ResponseWriter, err error) {
+	rw.WriteHeader(http.StatusBadRequest)
+	_, err = rw.Write([]byte(err.Error()))
+	if err != nil {
+		backend.Logger.Error(err.Error())
+	}
+}
+
+type columnRequest struct {
+	Table string `json:"table"`
+}
+
 func (ds *sqldatasource) handle(resource string) func(rw http.ResponseWriter, req *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		if ds.Completable == nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			_, err := rw.Write([]byte("not implemented"))
-			if err != nil {
-				backend.Logger.Error(err.Error())
-			}
+			handleError(rw, errors.New("not implemented"))
+			return
 		}
 
 		var res []string
@@ -147,24 +156,36 @@ func (ds *sqldatasource) handle(resource string) func(rw http.ResponseWriter, re
 		case "schemas":
 			res, err = ds.Completable.Schemas(req.Context(), ds.db)
 		case "columns":
-			table := path.Base(req.URL.Path)
-			res, err = ds.Completable.Columns(req.Context(), ds.db, table)
+			if req.Body == nil {
+				handleError(rw, errors.New("missing table name in request body"))
+				return
+			}
+			reqBody, err := ioutil.ReadAll(req.Body)
+			if err != nil {
+				handleError(rw, err)
+				return
+			}
+			column := columnRequest{}
+			err = json.Unmarshal(reqBody, &column)
+			if err != nil {
+				handleError(rw, err)
+				return
+			}
+			res, err = ds.Completable.Columns(req.Context(), ds.db, column.Table)
+			if err != nil {
+				handleError(rw, err)
+				return
+			}
 		}
 		if err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			_, err := rw.Write([]byte(err.Error()))
-			if err != nil {
-				backend.Logger.Error(err.Error())
-			}
+			handleError(rw, err)
+			return
 		}
 
 		resJSON, err := json.Marshal(res)
 		if err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			_, err := rw.Write([]byte(err.Error()))
-			if err != nil {
-				backend.Logger.Error(err.Error())
-			}
+			handleError(rw, err)
+			return
 		}
 		rw.Header().Add("Content-Type", "application/json")
 		_, err = rw.Write(resJSON)
@@ -177,5 +198,5 @@ func (ds *sqldatasource) handle(resource string) func(rw http.ResponseWriter, re
 func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/tables", ds.handle("tables"))
 	mux.HandleFunc("/schemas", ds.handle("schemas"))
-	mux.HandleFunc("/columns/", ds.handle("columns"))
+	mux.HandleFunc("/columns", ds.handle("columns"))
 }
