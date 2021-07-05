@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
 	"sync"
 
@@ -137,66 +136,70 @@ func handleError(rw http.ResponseWriter, err error) {
 	}
 }
 
+func sendResourceResponse(rw http.ResponseWriter, res []string) {
+	rw.Header().Add("Content-Type", "application/json")
+	if err := json.NewEncoder(rw).Encode(res); err != nil {
+		handleError(rw, err)
+		return
+	}
+}
+
 type columnRequest struct {
 	Table string `json:"table"`
 }
 
-func (ds *sqldatasource) handle(resource string) func(rw http.ResponseWriter, req *http.Request) {
-	return func(rw http.ResponseWriter, req *http.Request) {
-		if ds.Completable == nil {
-			handleError(rw, errors.New("not implemented"))
-			return
-		}
-
-		var res []string
-		var err error
-		switch resource {
-		case "tables":
-			res, err = ds.Completable.Tables(req.Context(), ds.db)
-		case "schemas":
-			res, err = ds.Completable.Schemas(req.Context(), ds.db)
-		case "columns":
-			if req.Body == nil {
-				handleError(rw, errors.New("missing table name in request body"))
-				return
-			}
-			reqBody, err := ioutil.ReadAll(req.Body)
-			if err != nil {
-				handleError(rw, err)
-				return
-			}
-			column := columnRequest{}
-			err = json.Unmarshal(reqBody, &column)
-			if err != nil {
-				handleError(rw, err)
-				return
-			}
-			res, err = ds.Completable.Columns(req.Context(), ds.db, column.Table)
-			if err != nil {
-				handleError(rw, err)
-				return
-			}
-		}
-		if err != nil {
-			handleError(rw, err)
-			return
-		}
-
-		resJSON, err := json.Marshal(res)
-		if err != nil {
-			handleError(rw, err)
-			return
-		}
-		rw.Header().Add("Content-Type", "application/json")
-		_, err = rw.Write(resJSON)
-		if err != nil {
-			backend.Logger.Error(err.Error())
-		}
+func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
+	if ds.Completable == nil {
+		handleError(rw, errors.New("not implemented"))
+		return
 	}
+
+	res, err := ds.Completable.Tables(req.Context())
+	if err != nil {
+		handleError(rw, err)
+		return
+	}
+
+	sendResourceResponse(rw, res)
+}
+
+func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
+	if ds.Completable == nil {
+		handleError(rw, errors.New("not implemented"))
+		return
+	}
+
+	res, err := ds.Completable.Schemas(req.Context())
+	if err != nil {
+		handleError(rw, err)
+		return
+	}
+
+	sendResourceResponse(rw, res)
+}
+
+func (ds *sqldatasource) getColumns(rw http.ResponseWriter, req *http.Request) {
+	if ds.Completable == nil {
+		handleError(rw, errors.New("not implemented"))
+		return
+	}
+
+	column := columnRequest{}
+	if err := json.NewDecoder(req.Body).Decode(&column); err != nil {
+		handleError(rw, err)
+		return
+	}
+	res, err := ds.Completable.Columns(req.Context(), column.Table)
+	if err != nil {
+		handleError(rw, err)
+		return
+	}
+
+	sendResourceResponse(rw, res)
 }
 
 func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/tables", ds.handle("tables"))
-	mux.HandleFunc("/schemas", ds.handle("schemas"))
-	mux.HandleFunc("/columns", ds.handle("columns"))
+	mux.HandleFunc("/tables", ds.getTables)
+	mux.HandleFunc("/schemas", ds.getSchemas)
+	mux.HandleFunc("/columns", ds.getColumns)
 }
