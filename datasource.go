@@ -3,10 +3,12 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"sync"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/pkg/errors"
 )
@@ -15,6 +17,9 @@ type sqldatasource struct {
 	db       *sql.DB
 	c        Driver
 	settings backend.DataSourceInstanceSettings
+
+	backend.CallResourceHandler
+	Completable
 }
 
 // NewDatasource creates a new `sqldatasource`.
@@ -26,6 +31,9 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	}
 	ds.db = db
 	ds.settings = settings
+	mux := http.NewServeMux()
+	ds.registerRoutes(mux)
+	ds.CallResourceHandler = httpadapter.New(mux)
 
 	return ds, nil
 }
