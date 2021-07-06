@@ -32,6 +32,11 @@ type Query struct {
 	Interval      time.Duration     `json:"-"`
 	TimeRange     backend.TimeRange `json:"-"`
 	MaxDataPoints int64             `json:"-"`
+
+	// Macros
+	Schema string `json:"schema,omitempty"`
+	Table  string `json:"table,omitempty"`
+	Column string `json:"column,omitempty"`
 }
 
 // WithSQL copies the Query, but with a different RawSQL value.
@@ -43,6 +48,9 @@ func (q *Query) WithSQL(query string) *Query {
 		Interval:      q.Interval,
 		TimeRange:     q.TimeRange,
 		MaxDataPoints: q.MaxDataPoints,
+		Schema:        q.Schema,
+		Table:         q.Table,
+		Column:        q.Column,
 	}
 }
 
@@ -62,6 +70,9 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 		Interval:      query.Interval,
 		TimeRange:     query.TimeRange,
 		MaxDataPoints: query.MaxDataPoints,
+		Schema:        model.Schema,
+		Table:         model.Table,
+		Column:        model.Column,
 	}, nil
 }
 
