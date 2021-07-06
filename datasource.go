@@ -3,7 +3,6 @@ package sqlds
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"sync"
 
@@ -126,80 +125,4 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
 	}, nil
-}
-
-func handleError(rw http.ResponseWriter, err error) {
-	rw.WriteHeader(http.StatusBadRequest)
-	_, err = rw.Write([]byte(err.Error()))
-	if err != nil {
-		backend.Logger.Error(err.Error())
-	}
-}
-
-func sendResourceResponse(rw http.ResponseWriter, res []string) {
-	rw.Header().Add("Content-Type", "application/json")
-	if err := json.NewEncoder(rw).Encode(res); err != nil {
-		handleError(rw, err)
-		return
-	}
-}
-
-type columnRequest struct {
-	Table string `json:"table"`
-}
-
-func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
-		return
-	}
-
-	res, err := ds.Completable.Tables(req.Context())
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
-}
-
-func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
-		return
-	}
-
-	res, err := ds.Completable.Schemas(req.Context())
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
-}
-
-func (ds *sqldatasource) getColumns(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
-		return
-	}
-
-	column := columnRequest{}
-	if err := json.NewDecoder(req.Body).Decode(&column); err != nil {
-		handleError(rw, err)
-		return
-	}
-	res, err := ds.Completable.Columns(req.Context(), column.Table)
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
-}
-
-func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/tables", ds.getTables)
-	mux.HandleFunc("/schemas", ds.getSchemas)
-	mux.HandleFunc("/columns", ds.getColumns)
 }
