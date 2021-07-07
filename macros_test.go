@@ -48,7 +48,7 @@ func TestInterpolate(t *testing.T) {
 		{input: "select * from $__foo()", output: "select * from bar", name: "correct macro"},
 		{input: "select '$__foo()' from $__foo()", output: "select 'bar' from bar", name: "multiple instances of same macro"},
 		{input: "select * from $__foo()$__foo()", output: "select * from barbar", name: "multiple instances of same macro without space"},
-		{input: "select * from $__foo", output: "select * from $__foo", name: "macro without paranthesis"},
+		{input: "select * from $__foo", output: "select * from bar", name: "macro without paranthesis"},
 		{input: "select * from $__params()", output: "select * from bar", name: "macro without params"},
 		{input: "select * from $__params(hello)", output: "select * from bar_hello", name: "with param"},
 		{input: "select * from $__params(hello) AND $__params(hello)", output: "select * from bar_hello AND bar_hello", name: "same macro multiple times with same param"},
