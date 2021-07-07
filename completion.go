@@ -11,8 +11,8 @@ import (
 
 // Completable will be used to autocomplete Tables Schemas and Columns for SQL languages
 type Completable interface {
-	Tables(ctx context.Context) ([]string, error)
 	Schemas(ctx context.Context) ([]string, error)
+	Tables(ctx context.Context, schema string) ([]string, error)
 	Columns(ctx context.Context, table string) ([]string, error)
 }
 
@@ -32,23 +32,12 @@ func sendResourceResponse(rw http.ResponseWriter, res []string) {
 	}
 }
 
-type columnRequest struct {
-	Table string `json:"table"`
+type tableRequest struct {
+	Schema string `json:"schema"`
 }
 
-func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
-		return
-	}
-
-	res, err := ds.Completable.Tables(req.Context())
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
+type columnRequest struct {
+	Table string `json:"table"`
 }
 
 func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
@@ -58,6 +47,26 @@ func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	res, err := ds.Completable.Schemas(req.Context())
+	if err != nil {
+		handleError(rw, err)
+		return
+	}
+
+	sendResourceResponse(rw, res)
+}
+
+func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
+	if ds.Completable == nil {
+		handleError(rw, errors.New("not implemented"))
+		return
+	}
+
+	reqBody := tableRequest{}
+	if err := json.NewDecoder(req.Body).Decode(&reqBody); err != nil {
+		handleError(rw, err)
+		return
+	}
+	res, err := ds.Completable.Tables(req.Context(), reqBody.Schema)
 	if err != nil {
 		handleError(rw, err)
 		return
