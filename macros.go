@@ -9,9 +9,6 @@ import (
 )
 
 var (
-	// ErrorNoArguments is returned when a macro is used but there were no arguments
-	// TODO: Note that it's possible that not every macro has an argument, and we should maybe adjust for this case
-	ErrorNoArguments = errors.New("there were no arguments provided to the macro")
 	// ErrorBadArgumentCount is returned from macros when the wrong number of arguments were provided
 	ErrorBadArgumentCount = errors.New("unexpected number of arguments")
 )
@@ -34,7 +31,7 @@ func trimAll(s []string) []string {
 }
 
 func getMacroRegex(name string) string {
-	return fmt.Sprintf("\\$__%s\\((.*?)\\)", name)
+	return fmt.Sprintf("\\$__%s(?:\\((.*?)\\))?", name)
 }
 
 func interpolate(driver Driver, query *Query) (string, error) {
@@ -52,12 +49,12 @@ func interpolate(driver Driver, query *Query) (string, error) {
 				continue
 			}
 
-			if len(match) == 1 {
-				// This macro has no arguments
-				return "", ErrorNoArguments
+			args := []string{}
+			if len(match) > 1 {
+				// This macro has arguments
+				args = trimAll(strings.Split(match[1], ","))
 			}
 
-			args := trimAll(strings.Split(match[1], ","))
 			res, err := macro(query.WithSQL(rawSQL), args)
 			if err != nil {
 				return "", err
