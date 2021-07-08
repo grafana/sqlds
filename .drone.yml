@@ -12,3 +12,9 @@ steps:
     image: golang:1.16
     commands:
       - go test ./...
+
+---
+kind: signature
+hmac: 7bdd444f0b237b6b8c5c0217dcb870c9fae03a6f6781dafe159a0df8d0b77b5a
+
+...
