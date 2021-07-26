@@ -32,6 +32,7 @@ type Query struct {
 	Interval      time.Duration     `json:"-"`
 	TimeRange     backend.TimeRange `json:"-"`
 	MaxDataPoints int64             `json:"-"`
+	FillMissing   *data.FillMissing `json:"-"`
 
 	// Macros
 	Schema string `json:"schema,omitempty"`
