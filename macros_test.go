@@ -34,12 +34,6 @@ func (h *MockDB) Macros() (macros Macros) {
 			}
 			return "bar", nil
 		},
-		"fill": func(query *Query, args []string) (out string, err error) {
-			query.FillMissing = &data.FillMissing{
-				Mode: data.FillModePrevious,
-			}
-			return "bar", nil
-		},
 	}
 }
 
@@ -48,7 +42,6 @@ func TestInterpolate(t *testing.T) {
 		name   string
 		input  string
 		output string
-		fill   *data.FillMissing
 	}
 	tests := []test{
 		{input: "select * from foo", output: "select * from foo", name: "macro with incorrect syntax"},
@@ -61,9 +54,6 @@ func TestInterpolate(t *testing.T) {
 		{input: "select * from $__params(hello) AND $__params(hello)", output: "select * from bar_hello AND bar_hello", name: "same macro multiple times with same param"},
 		{input: "select * from $__params(hello) AND $__params(world)", output: "select * from bar_hello AND bar_world", name: "same macro multiple times with different param"},
 		{input: "select * from $__params(world) AND $__foo() AND $__params(hello)", output: "select * from bar_world AND bar AND bar_hello", name: "different macros with different params"},
-		{input: "select $__fill() from foo", output: "select bar from foo", name: "macro with fill mode", fill: &data.FillMissing{
-			Mode: data.FillModePrevious,
-		}},
 	}
 	for i, tc := range tests {
 		driver := MockDB{}
@@ -71,10 +61,9 @@ func TestInterpolate(t *testing.T) {
 			query := &Query{
 				RawSQL: tc.input,
 			}
-			interpolatedQuery, fill, err := interpolate(&driver, query)
+			interpolatedQuery, err := interpolate(&driver, query)
 			require.Nil(t, err)
 			assert.Equal(t, tc.output, interpolatedQuery)
-			assert.Equal(t, tc.fill, fill)
 		})
 	}
 }

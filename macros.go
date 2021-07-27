@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/pkg/errors"
 )
 
@@ -35,14 +34,13 @@ func getMacroRegex(name string) string {
 	return fmt.Sprintf("\\$__%s(?:\\((.*?)\\))?", name)
 }
 
-func interpolate(driver Driver, query *Query) (string, *data.FillMissing, error) {
+func interpolate(driver Driver, query *Query) (string, error) {
 	macros := driver.Macros()
 	rawSQL := query.RawSQL
-	fillMissing := query.FillMissing
 	for key, macro := range macros {
 		rgx, err := regexp.Compile(getMacroRegex(key))
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		matches := rgx.FindAllStringSubmatch(rawSQL, -1)
 		for _, match := range matches {
@@ -57,23 +55,15 @@ func interpolate(driver Driver, query *Query) (string, *data.FillMissing, error)
 				args = trimAll(strings.Split(match[1], ","))
 			}
 
-			tempInterpolatedQuery := query.WithSQL(rawSQL)
-			res, err := macro(tempInterpolatedQuery, args)
+			res, err := macro(query.WithSQL(rawSQL), args)
 			if err != nil {
-				return "", nil, err
+				return "", err
 			}
 
 			rawSQL = strings.Replace(rawSQL, match[0], res, -1)
-			if tempInterpolatedQuery.FillMissing != nil {
-				if fillMissing == nil {
-					fillMissing = tempInterpolatedQuery.FillMissing
-				} else {
-					return "", nil, fmt.Errorf("fill mode can only be set once")
-				}
-			}
 		}
 
 	}
 
-	return rawSQL, fillMissing, nil
+	return rawSQL, nil
 }

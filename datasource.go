@@ -87,7 +87,7 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 	}
 
 	// Apply supported macros to the query
-	q.RawSQL, q.FillMissing, err = interpolate(ds.c, q)
+	q.RawSQL, err = interpolate(ds.c, q)
 	if err != nil {
 		return nil, errors.WithMessage(err, "Could not apply macros")
 	}
