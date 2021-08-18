@@ -134,3 +134,50 @@ func TestCompletable(t *testing.T) {
 		})
 	}
 }
+
+func Test_registerRoutes(t *testing.T) {
+	t.Run("it should add a new route", func(t *testing.T) {
+		sqlds := &sqldatasource{}
+		sqlds.CustomRoutes = map[string]func(http.ResponseWriter, *http.Request){
+			"/foo": func(w http.ResponseWriter, r *http.Request) {
+				_, err := w.Write([]byte("bar"))
+				if err != nil {
+					t.Fatal((err))
+				}
+			},
+		}
+
+		mux := http.NewServeMux()
+		err := sqlds.registerRoutes(mux)
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		resp := httptest.NewRecorder()
+		req, err := http.NewRequest("GET", "/foo", nil)
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		mux.ServeHTTP(resp, req)
+
+		respByte, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("unexpected error %v", err)
+		}
+		if string(respByte) != "bar" {
+			t.Errorf("unexpected response %s", string(respByte))
+		}
+	})
+
+	t.Run("it error if tried to add an existing route", func(t *testing.T) {
+		sqlds := &sqldatasource{}
+		sqlds.CustomRoutes = map[string]func(http.ResponseWriter, *http.Request){
+			"/tables": func(w http.ResponseWriter, r *http.Request) {},
+		}
+
+		mux := http.NewServeMux()
+		err := sqlds.registerRoutes(mux)
+		if err == nil || err.Error() != "unable to redefine /tables, use the Completable interface instead" {
+			t.Errorf("unexpected error %v", err)
+		}
+	})
+}
