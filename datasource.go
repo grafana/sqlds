@@ -20,6 +20,7 @@ type sqldatasource struct {
 
 	backend.CallResourceHandler
 	Completable
+	DB func(q *Query) (*sql.DB, error)
 }
 
 // NewDatasource creates a new `sqldatasource`.
@@ -98,11 +99,20 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 		fillMode = q.FillMissing
 	}
 
+	// The database connection may vary depending on query arguments
+	db := ds.db
+	if ds.DB != nil {
+		db, err = ds.DB(q)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// FIXES:
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	res, err := query(ds.db, ds.c.Converters(), fillMode, q)
+	res, err := query(db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
@@ -112,7 +122,7 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 		if err != nil {
 			return nil, err
 		}
-		return query(ds.db, ds.c.Converters(), fillMode, q)
+		return query(db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err

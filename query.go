@@ -25,8 +25,9 @@ const (
 // For the sake of backwards compatibility, when making changes to this type, ensure that changes are
 // only additive.
 type Query struct {
-	RawSQL string            `json:"rawSql"`
-	Format FormatQueryOption `json:"format"`
+	RawSQL string                 `json:"rawSql"`
+	Format FormatQueryOption      `json:"format"`
+	Args   map[string]interface{} `json:"args"`
 
 	RefID         string            `json:"-"`
 	Interval      time.Duration     `json:"-"`
@@ -45,6 +46,7 @@ type Query struct {
 func (q *Query) WithSQL(query string) *Query {
 	return &Query{
 		RawSQL:        query,
+		Args:          q.Args,
 		RefID:         q.RefID,
 		Interval:      q.Interval,
 		TimeRange:     q.TimeRange,
@@ -68,6 +70,7 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 	return &Query{
 		RawSQL:        model.RawSQL,
 		Format:        model.Format,
+		Args:          model.Args,
 		RefID:         query.RefID,
 		Interval:      query.Interval,
 		TimeRange:     query.TimeRange,
