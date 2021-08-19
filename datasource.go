@@ -3,23 +3,27 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
-	"github.com/pkg/errors"
 )
 
 type sqldatasource struct {
+	Completable
+
 	db       *sql.DB
 	c        Driver
 	settings backend.DataSourceInstanceSettings
+	timeout  time.Duration
 
 	backend.CallResourceHandler
-	Completable
 	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
 }
 
@@ -37,7 +41,9 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
+
 	ds.CallResourceHandler = httpadapter.New(mux)
+	ds.timeout = ds.c.Timeout(settings)
 
 	return ds, nil
 }
@@ -66,7 +72,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(query)
+			frames, err := ds.handleQuery(ctx, query)
 
 			response.Set(query.RefID, backend.DataResponse{
 				Frames: frames,
@@ -83,7 +89,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error) {
+func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery) (data.Frames, error) {
 	// Convert the backend.DataQuery into a Query object
 	q, err := GetQuery(req)
 	if err != nil {
@@ -93,7 +99,7 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 	// Apply supported macros to the query
 	q.RawSQL, err = interpolate(ds.c, q)
 	if err != nil {
-		return nil, errors.WithMessage(err, "Could not apply macros")
+		return nil, fmt.Errorf("%s: %w", "Could not apply macros", err)
 	}
 
 	// Apply the default FillMode, overwritting it if the query specifies it
@@ -102,21 +108,35 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 		fillMode = q.FillMissing
 	}
 
+	if ds.timeout != 0 {
+		tctx, cancel := context.WithTimeout(ctx, ds.timeout)
+		defer cancel()
+
+		ctx = tctx
+	}
+
 	// FIXES:
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	res, err := query(ds.db, ds.c.Converters(), fillMode, q)
+
+	// This function will return an "ErrorTimeout" if the context's done channel receives data
+	res, err := queryContext(ctx, ds.db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
 
-	if errors.Cause(err) == ErrorQuery {
+	if errors.Is(err, ErrorNoResults) {
+		return nil, nil
+	}
+
+	if errors.Is(err, ErrorQuery) {
 		ds.db, err = ds.c.Connect(ds.settings)
 		if err != nil {
 			return nil, err
 		}
-		return query(ds.db, ds.c.Converters(), fillMode, q)
+
+		return queryContext(ctx, ds.db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err
