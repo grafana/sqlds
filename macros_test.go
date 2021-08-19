@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
@@ -17,12 +18,15 @@ type MockDB struct{}
 func (h *MockDB) Connect(backend.DataSourceInstanceSettings) (db *sql.DB, err error) {
 	return
 }
+
 func (h *MockDB) FillMode() (mode *data.FillMissing) {
 	return
 }
+
 func (h *MockDB) Converters() (sc []sqlutil.Converter) {
 	return
 }
+
 func (h *MockDB) Macros() (macros Macros) {
 	return map[string]MacroFunc{
 		"foo": func(query *Query, args []string) (out string, err error) {
@@ -35,6 +39,10 @@ func (h *MockDB) Macros() (macros Macros) {
 			return "bar", nil
 		},
 	}
+}
+
+func (h *MockDB) Timeout(backend.DataSourceInstanceSettings) time.Duration {
+	return time.Minute
 }
 
 func TestInterpolate(t *testing.T) {
