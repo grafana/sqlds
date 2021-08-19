@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -95,8 +96,20 @@ func (ds *sqldatasource) getColumns(rw http.ResponseWriter, req *http.Request) {
 	sendResourceResponse(rw, res)
 }
 
-func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/tables", ds.getTables)
-	mux.HandleFunc("/schemas", ds.getSchemas)
-	mux.HandleFunc("/columns", ds.getColumns)
+func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) error {
+	defaultRoutes := map[string]func(http.ResponseWriter, *http.Request){
+		"/tables":  ds.getTables,
+		"/schemas": ds.getSchemas,
+		"/columns": ds.getColumns,
+	}
+	for route, handler := range defaultRoutes {
+		mux.HandleFunc(route, handler)
+	}
+	for route, handler := range ds.CustomRoutes {
+		if _, ok := defaultRoutes[route]; ok {
+			return fmt.Errorf("unable to redefine %s, use the Completable interface instead", route)
+		}
+		mux.HandleFunc(route, handler)
+	}
+	return nil
 }
