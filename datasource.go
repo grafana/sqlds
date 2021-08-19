@@ -20,7 +20,8 @@ type sqldatasource struct {
 
 	backend.CallResourceHandler
 	Completable
-	DB func(q *Query) (*sql.DB, error)
+	DB           func(q *Query) (*sql.DB, error)
+	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
 }
 
 // NewDatasource creates a new `sqldatasource`.
@@ -33,7 +34,10 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	ds.db = db
 	ds.settings = settings
 	mux := http.NewServeMux()
-	ds.registerRoutes(mux)
+	err = ds.registerRoutes(mux)
+	if err != nil {
+		return nil, err
+	}
 	ds.CallResourceHandler = httpadapter.New(mux)
 
 	return ds, nil
