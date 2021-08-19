@@ -25,9 +25,9 @@ const (
 // For the sake of backwards compatibility, when making changes to this type, ensure that changes are
 // only additive.
 type Query struct {
-	RawSQL string                 `json:"rawSql"`
-	Format FormatQueryOption      `json:"format"`
-	Args   map[string]interface{} `json:"args"`
+	RawSQL string            `json:"rawSql"`
+	Format FormatQueryOption `json:"format"`
+	Args   json.RawMessage   `json:"args"`
 
 	RefID         string            `json:"-"`
 	Interval      time.Duration     `json:"-"`

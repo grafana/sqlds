@@ -14,24 +14,23 @@ import (
 )
 
 type sqldatasource struct {
-	db       *sql.DB
-	c        Driver
-	settings backend.DataSourceInstanceSettings
+	dbConnections map[string]*sql.DB
+	c             Driver
+	settings      backend.DataSourceInstanceSettings
 
 	backend.CallResourceHandler
 	Completable
-	DB           func(q *Query) (*sql.DB, error)
 	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
 }
 
 // NewDatasource creates a new `sqldatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
 func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	db, err := ds.c.Connect(settings)
+	db, err := ds.c.Connect(settings, nil)
 	if err != nil {
 		return nil, err
 	}
-	ds.db = db
+	ds.dbConnections = map[string]*sql.DB{"": db}
 	ds.settings = settings
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
@@ -52,7 +51,10 @@ func NewDatasource(c Driver) *sqldatasource {
 
 // Dispose cleans up datasource instance resources.
 func (ds *sqldatasource) Dispose() {
-	ds.db.Close()
+	for k, db := range ds.dbConnections {
+		db.Close()
+		delete(ds.dbConnections, k)
+	}
 }
 
 // QueryData creates the Responses list and executes each query
@@ -83,6 +85,27 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
+func (ds *sqldatasource) getDB(q *Query) (*sql.DB, string, error) {
+	// The database connection may vary depending on query arguments
+	// The raw arguments are used as key to store the db connection in memory so they can be reused
+	key := ""
+	db := ds.dbConnections[key]
+	var err error
+	if len(q.Args) != 0 {
+		key = string(q.Args[:])
+		if cachedDB, ok := ds.dbConnections[key]; ok {
+			db = cachedDB
+		} else {
+			db, err = ds.c.Connect(ds.settings, q.Args)
+			if err != nil {
+				return nil, "", err
+			}
+			ds.dbConnections[key] = db
+		}
+	}
+	return db, key, nil
+}
+
 // handleQuery will call query, and attempt to reconnect if the query failed
 func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error) {
 	// Convert the backend.DataQuery into a Query object
@@ -103,13 +126,10 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 		fillMode = q.FillMissing
 	}
 
-	// The database connection may vary depending on query arguments
-	db := ds.db
-	if ds.DB != nil {
-		db, err = ds.DB(q)
-		if err != nil {
-			return nil, err
-		}
+	// Retrieve the database connection
+	db, cacheKey, err := ds.getDB(q)
+	if err != nil {
+		return nil, err
 	}
 
 	// FIXES:
@@ -122,7 +142,7 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 	}
 
 	if errors.Cause(err) == ErrorQuery {
-		ds.db, err = ds.c.Connect(ds.settings)
+		ds.dbConnections[cacheKey], err = ds.c.Connect(ds.settings, q.Args)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +154,7 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 
 // CheckHealth pings the connected SQL database
 func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	if err := ds.db.Ping(); err != nil {
+	if err := ds.dbConnections[""].Ping(); err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: err.Error(),

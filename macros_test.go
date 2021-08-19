@@ -1,28 +1,17 @@
 package sqlds
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/data"
-	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type MockDB struct{}
+type MockDB struct {
+	Driver
+}
 
-func (h *MockDB) Connect(backend.DataSourceInstanceSettings) (db *sql.DB, err error) {
-	return
-}
-func (h *MockDB) FillMode() (mode *data.FillMissing) {
-	return
-}
-func (h *MockDB) Converters() (sc []sqlutil.Converter) {
-	return
-}
 func (h *MockDB) Macros() (macros Macros) {
 	return map[string]MacroFunc{
 		"foo": func(query *Query, args []string) (out string, err error) {
