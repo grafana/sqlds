@@ -29,7 +29,7 @@ func Test_getDB(t *testing.T) {
 		db   *sql.DB
 	}{
 		{
-			"it should return the default db wiht no args",
+			"it should return the default db with no args",
 			"",
 			&sqldatasource{
 				dbConnections: map[string]*sql.DB{

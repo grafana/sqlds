@@ -146,7 +146,7 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 		if err != nil {
 			return nil, err
 		}
-		return query(db, ds.c.Converters(), fillMode, q)
+		return query(ds.dbConnections[cacheKey], ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err
