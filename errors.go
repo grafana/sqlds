@@ -1,9 +1,9 @@
 package sqlds
 
-import "github.com/pkg/errors"
+import "errors"
 
 var (
-	// ErrorBadDatasource ...
+	// ErrorBadDatasource is returned if the data source could not be asserted to the correct type (this should basically never happen?)
 	ErrorBadDatasource = errors.New("type assertion to datasource failed")
 	// ErrorJSON is returned when json.Unmarshal fails
 	ErrorJSON = errors.New("error unmarshaling query JSON the Query Model")
