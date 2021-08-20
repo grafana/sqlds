@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,7 @@ func (h *MockDB) Connect(backend.DataSourceInstanceSettings) (db *sql.DB, err er
 	return
 }
 
-func (h *MockDB) FillMode() (mode *data.FillMissing) {
+func (h *MockDB) Settings(backend.DataSourceInstanceSettings) (settings DriverSettings) {
 	return
 }
 

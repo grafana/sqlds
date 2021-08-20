@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -18,10 +17,11 @@ import (
 type sqldatasource struct {
 	Completable
 
-	db       *sql.DB
-	c        Driver
-	settings backend.DataSourceInstanceSettings
-	timeout  time.Duration
+	db *sql.DB
+	c  Driver
+
+	driverSettings DriverSettings
+	settings       backend.DataSourceInstanceSettings
 
 	backend.CallResourceHandler
 	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
@@ -43,7 +43,7 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
-	ds.timeout = ds.c.Timeout(settings)
+	ds.driverSettings = ds.c.Settings(settings)
 
 	return ds, nil
 }
@@ -103,13 +103,13 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	}
 
 	// Apply the default FillMode, overwritting it if the query specifies it
-	fillMode := ds.c.FillMode()
+	fillMode := ds.driverSettings.FillMode
 	if q.FillMissing != nil {
 		fillMode = q.FillMissing
 	}
 
-	if ds.timeout != 0 {
-		tctx, cancel := context.WithTimeout(ctx, ds.timeout)
+	if ds.driverSettings.Timeout != 0 {
+		tctx, cancel := context.WithTimeout(ctx, ds.driverSettings.Timeout)
 		defer cancel()
 
 		ctx = tctx
@@ -119,15 +119,13 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-
-	// This function will return an "ErrorTimeout" if the context's done channel receives data
-	res, err := queryContext(ctx, ds.db, ds.c.Converters(), fillMode, q)
+	res, err := query(ctx, ds.db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
 
 	if errors.Is(err, ErrorNoResults) {
-		return nil, nil
+		return res, nil
 	}
 
 	if errors.Is(err, ErrorQuery) {
@@ -136,7 +134,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 			return nil, err
 		}
 
-		return queryContext(ctx, ds.db, ds.c.Converters(), fillMode, q)
+		return query(ctx, ds.db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err

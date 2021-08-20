@@ -91,28 +91,6 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 	return frames
 }
 
-func queryContext(ctx context.Context, db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissing, q *Query) (data.Frames, error) {
-	var (
-		done = make(chan bool)
-		res  = data.Frames{}
-		err  error
-	)
-
-	go func() {
-		res, err = query(ctx, db, converters, fillMode, q)
-		done <- true
-	}()
-
-	select {
-	case <-done:
-		// The done channel will receive data if the query funciton has completed
-		return res, err
-	case <-ctx.Done():
-		// The context's done channel will receive data if the timeout is exceeded
-		return nil, ErrorTimeout
-	}
-}
-
 // query sends the query to the sql.DB and converts the rows to a dataframe.
 func query(ctx context.Context, db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Query the rows from the database
@@ -140,7 +118,7 @@ func query(ctx context.Context, db *sql.DB, converters []sqlutil.Converter, fill
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, converters, fillMode, query)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, "Could not process SQL results")
+		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", err, "Could not process SQL results")
 	}
 
 	return res, nil
