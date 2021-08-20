@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -13,14 +14,20 @@ import (
 	"github.com/pkg/errors"
 )
 
+const defaultKey = "_default"
+
 type sqldatasource struct {
-	dbConnections map[string]*sql.DB
+	dbConnections sync.Map
 	c             Driver
 	settings      backend.DataSourceInstanceSettings
 
 	backend.CallResourceHandler
 	Completable
 	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
+	// Enabling multiple connections may cause that concurrent connection limits
+	// are hit. The datasource enabling this should make sure connections are cached
+	// if necessary.
+	EnableMultipleConnections bool
 }
 
 // NewDatasource creates a new `sqldatasource`.
@@ -30,7 +37,7 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	ds.dbConnections = map[string]*sql.DB{"": db}
+	ds.dbConnections.Store(defaultKey, db) // = map[string]*sql.DB{"": db}
 	ds.settings = settings
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
@@ -51,10 +58,14 @@ func NewDatasource(c Driver) *sqldatasource {
 
 // Dispose cleans up datasource instance resources.
 func (ds *sqldatasource) Dispose() {
-	for k, db := range ds.dbConnections {
-		db.Close()
-		delete(ds.dbConnections, k)
-	}
+	ds.dbConnections.Range(func(key, db interface{}) bool {
+		err := db.(*sql.DB).Close()
+		if err != nil {
+			backend.Logger.Error(err.Error())
+		}
+		ds.dbConnections.Delete(key)
+		return true
+	})
 }
 
 // QueryData creates the Responses list and executes each query
@@ -88,22 +99,29 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 func (ds *sqldatasource) getDB(q *Query) (*sql.DB, string, error) {
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := ""
-	db := ds.dbConnections[key]
-	var err error
-	if len(q.Args) != 0 {
-		key = string(q.Args[:])
-		if cachedDB, ok := ds.dbConnections[key]; ok {
-			db = cachedDB
-		} else {
-			db, err = ds.c.Connect(ds.settings, q.Args)
-			if err != nil {
-				return nil, "", err
-			}
-			ds.dbConnections[key] = db
-		}
+	key := defaultKey
+	db, ok := ds.dbConnections.Load(key)
+	if !ok {
+		return nil, "", fmt.Errorf("unable to get default db connection")
 	}
-	return db, key, nil
+	if ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
+		return db.(*sql.DB), key, nil
+	}
+
+	var err error
+	key = string(q.ConnectionArgs[:])
+	if cachedDB, ok := ds.dbConnections.Load(key); ok {
+		return cachedDB.(*sql.DB), key, nil
+	}
+
+	db, err = ds.c.Connect(ds.settings, q.ConnectionArgs)
+	if err != nil {
+		return nil, "", err
+	}
+	// Assign this connection in the cache
+	ds.dbConnections.Store(key, db)
+
+	return db.(*sql.DB), key, nil
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
@@ -142,11 +160,12 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 	}
 
 	if errors.Cause(err) == ErrorQuery {
-		ds.dbConnections[cacheKey], err = ds.c.Connect(ds.settings, q.Args)
+		db, err = ds.c.Connect(ds.settings, q.ConnectionArgs)
+		ds.dbConnections.Store(cacheKey, db)
 		if err != nil {
 			return nil, err
 		}
-		return query(ds.dbConnections[cacheKey], ds.c.Converters(), fillMode, q)
+		return query(db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err
@@ -154,7 +173,11 @@ func (ds *sqldatasource) handleQuery(req backend.DataQuery) (data.Frames, error)
 
 // CheckHealth pings the connected SQL database
 func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	if err := ds.dbConnections[""].Ping(); err != nil {
+	db, ok := ds.dbConnections.Load(defaultKey)
+	if !ok {
+		return nil, fmt.Errorf("unable to get default db connection")
+	}
+	if err := db.(*sql.DB).Ping(); err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: err.Error(),

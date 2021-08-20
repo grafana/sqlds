@@ -25,9 +25,9 @@ const (
 // For the sake of backwards compatibility, when making changes to this type, ensure that changes are
 // only additive.
 type Query struct {
-	RawSQL string            `json:"rawSql"`
-	Format FormatQueryOption `json:"format"`
-	Args   json.RawMessage   `json:"args"`
+	RawSQL         string            `json:"rawSql"`
+	Format         FormatQueryOption `json:"format"`
+	ConnectionArgs json.RawMessage   `json:"connectionArgs"`
 
 	RefID         string            `json:"-"`
 	Interval      time.Duration     `json:"-"`
@@ -45,16 +45,16 @@ type Query struct {
 // This is mostly useful in the Interpolate function, where the RawSQL value is modified in a loop
 func (q *Query) WithSQL(query string) *Query {
 	return &Query{
-		RawSQL:        query,
-		Args:          q.Args,
-		RefID:         q.RefID,
-		Interval:      q.Interval,
-		TimeRange:     q.TimeRange,
-		MaxDataPoints: q.MaxDataPoints,
-		FillMissing:   q.FillMissing,
-		Schema:        q.Schema,
-		Table:         q.Table,
-		Column:        q.Column,
+		RawSQL:         query,
+		ConnectionArgs: q.ConnectionArgs,
+		RefID:          q.RefID,
+		Interval:       q.Interval,
+		TimeRange:      q.TimeRange,
+		MaxDataPoints:  q.MaxDataPoints,
+		FillMissing:    q.FillMissing,
+		Schema:         q.Schema,
+		Table:          q.Table,
+		Column:         q.Column,
 	}
 }
 
@@ -68,17 +68,17 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 
 	// Copy directly from the well typed query
 	return &Query{
-		RawSQL:        model.RawSQL,
-		Format:        model.Format,
-		Args:          model.Args,
-		RefID:         query.RefID,
-		Interval:      query.Interval,
-		TimeRange:     query.TimeRange,
-		MaxDataPoints: query.MaxDataPoints,
-		FillMissing:   model.FillMissing,
-		Schema:        model.Schema,
-		Table:         model.Table,
-		Column:        model.Column,
+		RawSQL:         model.RawSQL,
+		Format:         model.Format,
+		ConnectionArgs: model.ConnectionArgs,
+		RefID:          query.RefID,
+		Interval:       query.Interval,
+		TimeRange:      query.TimeRange,
+		MaxDataPoints:  query.MaxDataPoints,
+		FillMissing:    model.FillMissing,
+		Schema:         model.Schema,
+		Table:          model.Table,
+		Column:         model.Column,
 	}, nil
 }
 
