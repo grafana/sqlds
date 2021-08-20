@@ -37,7 +37,7 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	ds.dbConnections.Store(defaultKey, db) // = map[string]*sql.DB{"": db}
+	ds.dbConnections.Store(defaultKey, db)
 	ds.settings = settings
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
