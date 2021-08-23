@@ -1,14 +1,15 @@
 package sqlds
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/pkg/errors"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -94,11 +95,11 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 }
 
 // query sends the query to the sql.DB and converts the rows to a dataframe.
-func query(db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+func query(ctx context.Context, db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Query the rows from the database
-	rows, err := db.Query(query.RawSQL)
+	rows, err := db.QueryContext(ctx, query.RawSQL)
 	if err != nil {
-		return getErrorFrameFromQuery(query), errors.Wrap(ErrorQuery, err.Error())
+		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", ErrorQuery, err.Error())
 	}
 
 	// Check for an error response
@@ -106,9 +107,9 @@ func query(db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissin
 		if err == sql.ErrNoRows {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
-			return getErrorFrameFromQuery(query), errors.WithMessage(err, "No results from query")
+			return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "No results from query", err)
 		}
-		return getErrorFrameFromQuery(query), errors.WithMessage(err, "Error response from database")
+		return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "Error response from database", err)
 	}
 
 	defer func() {
@@ -120,7 +121,7 @@ func query(db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissin
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, converters, fillMode, query)
 	if err != nil {
-		return nil, errors.WithMessage(err, "Could not process SQL results")
+		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", err, "Could not process SQL results")
 	}
 
 	return res, nil
@@ -140,6 +141,16 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 
 	if query.Format == FormatOptionTable {
 		return data.Frames{frame}, nil
+	}
+
+	count, err := frame.RowLen()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if count == 0 {
+		return nil, ErrorNoResults
 	}
 
 	if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {

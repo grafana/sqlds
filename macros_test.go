@@ -3,7 +3,9 @@ package sqlds
 import (
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,6 +26,10 @@ func (h *MockDB) Macros() (macros Macros) {
 			return "bar", nil
 		},
 	}
+}
+
+func (h *MockDB) Timeout(backend.DataSourceInstanceSettings) time.Duration {
+	return time.Minute
 }
 
 func TestInterpolate(t *testing.T) {

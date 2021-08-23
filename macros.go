@@ -1,11 +1,10 @@
 package sqlds
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 var (
