@@ -108,7 +108,7 @@ func (ds *sqldatasource) getDB(q *Query) (*sql.DB, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("unable to get default db connection")
 	}
-	if ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
+	if !ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
 		return db.(*sql.DB), key, nil
 	}
 

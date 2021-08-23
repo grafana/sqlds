@@ -21,33 +21,38 @@ func (d *fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage
 
 func Test_getDB(t *testing.T) {
 	db := &sql.DB{}
-	d := &fakeDriver{db: db}
+	db2 := &sql.DB{}
+	d := &fakeDriver{db: db2}
 	tests := []struct {
-		desc     string
-		args     string
-		dbExists bool
+		desc       string
+		args       string
+		existingDB *sql.DB
+		expectedDB *sql.DB
 	}{
 		{
 			"it should return the default db with no args",
 			defaultKey,
-			true,
+			db,
+			db,
 		},
 		{
 			"it should return the cached connection for the given args",
 			"foo",
-			true,
+			db,
+			db,
 		},
 		{
 			"it should create a new connection with the given args",
 			"foo",
-			false,
+			nil,
+			db2,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			ds := &sqldatasource{c: d}
-			if tt.dbExists {
-				ds.dbConnections.Store(tt.args, db)
+			ds := &sqldatasource{c: d, EnableMultipleConnections: true}
+			if tt.existingDB != nil {
+				ds.dbConnections.Store(tt.args, tt.existingDB)
 			}
 			if tt.args != defaultKey {
 				// Add the mandatory default db
@@ -60,7 +65,7 @@ func Test_getDB(t *testing.T) {
 			if key != tt.args {
 				t.Fatalf("unexpected cache key %s", key)
 			}
-			if res != db {
+			if res != tt.expectedDB {
 				t.Fatalf("unexpected result %v", res)
 			}
 		})
