@@ -3,12 +3,15 @@ package sqlds
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/pkg/errors"
 )
+
+// ErrorNotImplemented is returned if the function is not implemented by the provided Driver (the Completable pointer is nil)
+var ErrorNotImplemented = errors.New("not implemented")
 
 // Completable will be used to autocomplete Tables Schemas and Columns for SQL languages
 type Completable interface {
@@ -43,7 +46,7 @@ type columnRequest struct {
 
 func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
 	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
+		handleError(rw, ErrorNotImplemented)
 		return
 	}
 
@@ -58,7 +61,7 @@ func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
 
 func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
 	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
+		handleError(rw, ErrorNotImplemented)
 		return
 	}
 
@@ -78,7 +81,7 @@ func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
 
 func (ds *sqldatasource) getColumns(rw http.ResponseWriter, req *http.Request) {
 	if ds.Completable == nil {
-		handleError(rw, errors.New("not implemented"))
+		handleError(rw, ErrorNotImplemented)
 		return
 	}
 
