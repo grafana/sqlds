@@ -2,6 +2,7 @@ package sqlds
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -18,7 +19,7 @@ type DriverSettings struct {
 // Plugin creators will need to implement this in order to create a managed datasource
 type Driver interface {
 	// Connect connects to the database. It does not need to call `db.Ping()`
-	Connect(backend.DataSourceInstanceSettings) (*sql.DB, error)
+	Connect(backend.DataSourceInstanceSettings, json.RawMessage) (*sql.DB, error)
 	// Settings are read whenever the plugin is initialized, or after the data source settings are updated
 	Settings(backend.DataSourceInstanceSettings) DriverSettings
 	Macros() Macros
