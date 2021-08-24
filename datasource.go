@@ -112,12 +112,12 @@ func (ds *sqldatasource) getDB(q *Query) (*sql.DB, string, error) {
 		return db.(*sql.DB), key, nil
 	}
 
-	var err error
-	key = string(q.ConnectionArgs[:])
+	key = string(q.ConnectionArgs)
 	if cachedDB, ok := ds.dbConnections.Load(key); ok {
 		return cachedDB.(*sql.DB), key, nil
 	}
 
+	var err error
 	db, err = ds.c.Connect(ds.settings, q.ConnectionArgs)
 	if err != nil {
 		return nil, "", err
@@ -176,10 +176,10 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 
 	if errors.Is(err, ErrorQuery) {
 		db, err = ds.c.Connect(ds.settings, q.ConnectionArgs)
-		ds.dbConnections.Store(cacheKey, db)
 		if err != nil {
 			return nil, err
 		}
+		ds.dbConnections.Store(cacheKey, db)
 
 		return query(ctx, db, ds.c.Converters(), fillMode, q)
 	}
