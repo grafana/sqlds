@@ -1,4 +1,4 @@
-module github.com/grafana/sqlds
+module github.com/grafana/sqlds/v2
 
 go 1.15
 
