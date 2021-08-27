@@ -39,17 +39,27 @@ func TestQuery_MySQL(t *testing.T) {
 	var (
 		args = testEnvArgs(t)
 		ctx  = context.Background()
+
+		db *sql.DB
 	)
 
 	if !args.RunIntegrationTests {
 		t.SkipNow()
 	}
 
-	db, err := sql.Open("mysql", args.MySQLURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
+	limit := 10
+	for i := 0; i < limit; i++ {
+		d, err := sql.Open("mysql", args.MySQLURL)
+		if err == nil {
+			db = d
+			break
+		}
+
+		<-ticker.C
+	}
 	defer db.Close()
 
 	if err := db.Ping(); err != nil {
