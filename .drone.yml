@@ -25,7 +25,7 @@ steps:
     image: golang:1.16
     environment:
       INTEGRATION_TESTS: "true"
-      MYSQL_URL: "tcp://mysql:mysql@mysql:3306/mysql"
+      MYSQL_URL: "mysql:mysql@tcp(mysql:3306)/mysql"
     commands:
       - go test ./...
 
