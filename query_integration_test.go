@@ -47,9 +47,10 @@ func TestQuery_MySQL(t *testing.T) {
 		t.SkipNow()
 	}
 
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(time.Second * 5)
 	defer ticker.Stop()
 
+	// Attempt to connect multiple times because these tests are ran in Drone, where the mysql server may not be immediately available when this test is ran.
 	limit := 10
 	for i := 0; i < limit; i++ {
 		d, err := sql.Open("mysql", args.MySQLURL)
