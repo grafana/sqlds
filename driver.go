@@ -1,6 +1,7 @@
 package sqlds
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"time"
@@ -24,4 +25,13 @@ type Driver interface {
 	Settings(backend.DataSourceInstanceSettings) DriverSettings
 	Macros() Macros
 	Converters() []sqlutil.Converter
+}
+
+// Connection represents a SQL connection and is satisfied by the *sql.DB type
+// For now, we only add the functions that we need / actively use. Some other candidates for future use could include the ExecContext and BeginTxContext functions
+type Connection interface {
+	Close() error
+	Ping() error
+	PingContext(ctx context.Context) error
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 }

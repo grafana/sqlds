@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -94,12 +95,17 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 	return frames
 }
 
-// query sends the query to the sql.DB and converts the rows to a dataframe.
-func query(ctx context.Context, db *sql.DB, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+// query sends the query to the connection and converts the rows to a dataframe.
+func query(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Query the rows from the database
 	rows, err := db.QueryContext(ctx, query.RawSQL)
 	if err != nil {
-		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", ErrorQuery, err.Error())
+		errType := ErrorQuery
+		if errors.Is(err, context.Canceled) {
+			errType = context.Canceled
+		}
+
+		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", errType, err.Error())
 	}
 
 	// Check for an error response
