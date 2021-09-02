@@ -133,13 +133,13 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	// Convert the backend.DataQuery into a Query object
 	q, err := GetQuery(req)
 	if err != nil {
-		return nil, err
+		return getErrorFrameFromQuery(q), err
 	}
 
 	// Apply supported macros to the query
 	q.RawSQL, err = interpolate(ds.c, q)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", "Could not apply macros", err)
+		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
 	}
 
 	// Apply the default FillMode, overwritting it if the query specifies it
@@ -151,7 +151,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	// Retrieve the database connection
 	db, cacheKey, err := ds.getDB(q)
 	if err != nil {
-		return nil, err
+		return getErrorFrameFromQuery(q), err
 	}
 
 	if ds.driverSettings.Timeout != 0 {
