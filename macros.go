@@ -39,7 +39,7 @@ func interpolate(driver Driver, query *Query) (string, error) {
 	for key, macro := range macros {
 		rgx, err := regexp.Compile(getMacroRegex(key))
 		if err != nil {
-			return "", err
+			return rawSQL, err
 		}
 		matches := rgx.FindAllStringSubmatch(rawSQL, -1)
 		for _, match := range matches {
@@ -56,7 +56,7 @@ func interpolate(driver Driver, query *Query) (string, error) {
 
 			res, err := macro(query.WithSQL(rawSQL), args)
 			if err != nil {
-				return "", err
+				return rawSQL, err
 			}
 
 			rawSQL = strings.Replace(rawSQL, match[0], res, -1)
