@@ -20,7 +20,7 @@ const (
 	FormatOptionTimeSeries FormatQueryOption = iota
 	// FormatOptionTable formats the query results as a table using "LongToWide"
 	FormatOptionTable
-	// FormatOptionLogs formats the query as FormatOptionTable
+	// FormatOptionLogs sets the preferred visualization to logs
 	FormatOptionLogs
 )
 
