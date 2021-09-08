@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -103,4 +105,27 @@ func TestQuery_Timeout(t *testing.T) {
 			t.Fatal("expected function to complete, received error: ", err)
 		}
 	})
+}
+
+func Test_isLogFrame(t *testing.T) {
+	tests := []struct {
+		name     string
+		frame    data.Frame
+		expected bool
+	}{
+		{frame: *data.NewFrameOfFieldTypes("foo", 4)},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeBool)},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeTime)},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeString)},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeString, data.FieldTypeNullableString)},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeString, data.FieldTypeTime), expected: true},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeNullableString, data.FieldTypeNullableString, data.FieldTypeNullableFloat64, data.FieldTypeTime), expected: true},
+		{frame: *data.NewFrameOfFieldTypes("foo", 4, data.FieldTypeNullableString, data.FieldTypeNullableString, data.FieldTypeNullableFloat64)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := isLogFrame(tt.frame)
+			assert.Equal(t, tt.expected, actual)
+		})
+	}
 }

@@ -21,6 +21,8 @@ const (
 	FormatOptionTimeSeries FormatQueryOption = iota
 	// FormatOptionTable formats the query results as a table using "LongToWide"
 	FormatOptionTable
+	// FormatOptionLogs formats the query results as a table but set the preferred visualization as "Logs"
+	FormatOptionLogs
 )
 
 // Query is the model that represents the query that users submit from the panel / queryeditor.
@@ -133,6 +135,27 @@ func query(ctx context.Context, db Connection, converters []sqlutil.Converter, f
 	return res, nil
 }
 
+func isLogFrame(frame data.Frame) bool {
+	if len(frame.Fields) < 2 {
+		return false
+	}
+	timeFrameFound := false
+	contentFrameFound := false
+	for _, field := range frame.Fields {
+		fieldType := field.Type()
+		if fieldType == data.FieldTypeTime || fieldType == data.FieldTypeNullableTime {
+			timeFrameFound = true
+		}
+		if fieldType == data.FieldTypeString || fieldType == data.FieldTypeNullableString {
+			contentFrameFound = true
+		}
+		if timeFrameFound && contentFrameFound {
+			break
+		}
+	}
+	return timeFrameFound && contentFrameFound
+}
+
 func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	frame, err := sqlutil.FrameFromRows(rows, limit, converters...)
 	frame.Name = query.RefID
@@ -144,8 +167,10 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	}
 
 	frame.Meta.ExecutedQueryString = query.RawSQL
-
-	if query.Format == FormatOptionTable {
+	if query.Format == FormatOptionTable || query.Format == FormatOptionLogs {
+		if query.Format == FormatOptionLogs && isLogFrame(*frame) {
+			frame.Meta.PreferredVisualization = data.VisTypeLogs
+		}
 		return data.Frames{frame}, nil
 	}
 
