@@ -21,7 +21,7 @@ const (
 	FormatOptionTimeSeries FormatQueryOption = iota
 	// FormatOptionTable formats the query results as a table using "LongToWide"
 	FormatOptionTable
-	// FormatOptionLogs formats the query results as a table but set the preferred visualization as "Logs"
+	// FormatOptionLogs sets the preferred visualization to logs
 	FormatOptionLogs
 )
 
@@ -167,15 +167,11 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	}
 
 	frame.Meta.ExecutedQueryString = query.RawSQL
+
 	if query.Format == FormatOptionTable || query.Format == FormatOptionLogs {
 		if query.Format == FormatOptionLogs && isLogFrame(*frame) {
 			frame.Meta.PreferredVisualization = data.VisTypeLogs
 		}
-		return data.Frames{frame}, nil
-	}
-
-	if query.Format == FormatOptionLogs {
-		frame.Meta.PreferredVisualization = data.VisTypeLogs
 		return data.Frames{frame}, nil
 	}
 
