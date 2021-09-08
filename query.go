@@ -21,6 +21,8 @@ const (
 	FormatOptionTimeSeries FormatQueryOption = iota
 	// FormatOptionTable formats the query results as a table using "LongToWide"
 	FormatOptionTable
+	// FormatOptionLogs sets the preferred visualization to logs
+	FormatOptionLogs
 )
 
 // Query is the model that represents the query that users submit from the panel / queryeditor.
@@ -146,6 +148,11 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	frame.Meta.ExecutedQueryString = query.RawSQL
 
 	if query.Format == FormatOptionTable {
+		return data.Frames{frame}, nil
+	}
+
+	if query.Format == FormatOptionLogs {
+		frame.Meta.PreferredVisualization = data.VisTypeLogs
 		return data.Frames{frame}, nil
 	}
 
