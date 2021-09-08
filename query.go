@@ -174,6 +174,11 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 		return data.Frames{frame}, nil
 	}
 
+	if query.Format == FormatOptionLogs {
+		frame.Meta.PreferredVisualization = data.VisTypeLogs
+		return data.Frames{frame}, nil
+	}
+
 	count, err := frame.RowLen()
 
 	if err != nil {
