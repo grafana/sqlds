@@ -137,10 +137,10 @@ func query(ctx context.Context, db Connection, converters []sqlutil.Converter, f
 
 func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	frame, err := sqlutil.FrameFromRows(rows, limit, converters...)
-	frame.Name = query.RefID
 	if err != nil {
 		return nil, err
 	}
+	frame.Name = query.RefID
 	if frame.Meta == nil {
 		frame.Meta = &data.FrameMeta{}
 	}
