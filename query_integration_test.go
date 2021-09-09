@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -53,19 +54,18 @@ func TestQuery_MySQL(t *testing.T) {
 	// Attempt to connect multiple times because these tests are ran in Drone, where the mysql server may not be immediately available when this test is ran.
 	limit := 10
 	for i := 0; i < limit; i++ {
+		log.Println("Attempting mysql connection...")
 		d, err := sql.Open("mysql", args.MySQLURL)
 		if err == nil {
-			db = d
-			break
+			if err := d.Ping(); err == nil {
+				db = d
+				break
+			}
 		}
 
 		<-ticker.C
 	}
 	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		t.Fatal(err)
-	}
 
 	t.Run("The query should return a context.Canceled if it exceeds the timeout", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
