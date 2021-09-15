@@ -25,6 +25,10 @@ func (h *MockDB) Macros() (macros Macros) {
 			}
 			return "bar", nil
 		},
+		// overwrite a default macro
+		"timeGroup": func(query *Query, args []string) (out string, err error) {
+			return "grouped!", nil
+		},
 	}
 }
 
@@ -49,6 +53,10 @@ func TestInterpolate(t *testing.T) {
 		{input: "select * from $__params(hello) AND $__params(hello)", output: "select * from bar_hello AND bar_hello", name: "same macro multiple times with same param"},
 		{input: "select * from $__params(hello) AND $__params(world)", output: "select * from bar_hello AND bar_world", name: "same macro multiple times with different param"},
 		{input: "select * from $__params(world) AND $__foo() AND $__params(hello)", output: "select * from bar_world AND bar AND bar_hello", name: "different macros with different params"},
+		{input: "select * from foo where $__timeFilter(time)", output: "select * from foo where time BETWEEN '0001-01-01T00:00:00Z' AND '0001-01-01T00:00:00Z'", name: "default timeFilter"},
+		{input: "select * from foo where $__timeTo(time)", output: "select * from foo where time < '0001-01-01T00:00:00Z'", name: "default timeTo macro"},
+		{input: "select * from foo where $__timeFrom(time)", output: "select * from foo where time > '0001-01-01T00:00:00Z'", name: "default timeFrom macro"},
+		{input: "select * from foo where $__timeGroup(time,minute)", output: "select * from foo where grouped!", name: "overriden timeGroup macro"},
 	}
 	for i, tc := range tests {
 		driver := MockDB{}
