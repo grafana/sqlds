@@ -1,12 +1,11 @@
 package sqlds
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/pkg/errors"
 )
 
 var (
@@ -28,7 +27,7 @@ type Macros map[string]MacroFunc
 //   $__timeFilter(time) => "time BETWEEN '2006-01-02T15:04:05Z07:00' AND '2006-01-02T15:04:05Z07:00'"
 func macroTimeFilter(query *Query, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", errors.WithMessagef(ErrorBadArgumentCount, "expected 1 argument, received %d", len(args))
+		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
 	}
 
 	var (
@@ -37,7 +36,7 @@ func macroTimeFilter(query *Query, args []string) (string, error) {
 		to     = query.TimeRange.To.UTC().Format(time.RFC3339)
 	)
 
-	return fmt.Sprintf("%s BETWEEN '%s' AND '%s'", column, from, to), nil
+	return fmt.Sprintf("%s >= '%s' AND %s <= '%s'", column, from, column, to), nil
 }
 
 // Default time filter for SQL based on the starting query time range.
@@ -46,10 +45,10 @@ func macroTimeFilter(query *Query, args []string) (string, error) {
 //   $__timeFrom(time) => "time > '2006-01-02T15:04:05Z07:00'"
 func macroTimeFrom(query *Query, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", errors.WithMessagef(ErrorBadArgumentCount, "expected 1 argument, received %d", len(args))
+		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
 	}
 
-	return fmt.Sprintf("%s > '%s'", args[0], query.TimeRange.From.UTC().Format(time.RFC3339)), nil
+	return fmt.Sprintf("%s >= '%s'", args[0], query.TimeRange.From.UTC().Format(time.RFC3339)), nil
 
 }
 
@@ -59,10 +58,10 @@ func macroTimeFrom(query *Query, args []string) (string, error) {
 //   $__timeTo(time) => "time < '2006-01-02T15:04:05Z07:00'"
 func macroTimeTo(query *Query, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", errors.WithMessagef(ErrorBadArgumentCount, "expected 1 argument, received %d", len(args))
+		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
 	}
 
-	return fmt.Sprintf("%s < '%s'", args[0], query.TimeRange.To.UTC().Format(time.RFC3339)), nil
+	return fmt.Sprintf("%s <= '%s'", args[0], query.TimeRange.To.UTC().Format(time.RFC3339)), nil
 }
 
 // Default time group for SQL based the given period.
@@ -72,7 +71,7 @@ func macroTimeTo(query *Query, args []string) (string, error) {
 //   $__timeTo(time, month) => "datepart(year, time), datepart(month, time)'"
 func macroTimeGroup(query *Query, args []string) (string, error) {
 	if len(args) != 2 {
-		return "", errors.WithMessagef(ErrorBadArgumentCount, "macro $__timeGroup needs time column and interval")
+		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
 	}
 
 	res := ""
@@ -96,11 +95,27 @@ func macroTimeGroup(query *Query, args []string) (string, error) {
 	return res, nil
 }
 
+// Default macro to return the query table name.
+// Example:
+//   $__table => "my_table"
+func macroTable(query *Query, args []string) (string, error) {
+	return query.Table, nil
+}
+
+// Default macro to return the query column name.
+// Example:
+//   $__column => "my_col"
+func macroColumn(query *Query, args []string) (string, error) {
+	return query.Column, nil
+}
+
 var DefaultMacros Macros = Macros{
 	"timeFilter": macroTimeFilter,
 	"timeFrom":   macroTimeFrom,
 	"timeGroup":  macroTimeGroup,
 	"timeTo":     macroTimeTo,
+	"table":      macroTable,
+	"column":     macroColumn,
 }
 
 func trimAll(s []string) []string {
