@@ -50,22 +50,22 @@ func Test_sendResourceResponse(t *testing.T) {
 }
 
 type fakeCompletable struct {
-	schemas []string
+	schemas map[string][]string
 	tables  map[string][]string
 	columns map[string][]string
 	err     error
 }
 
-func (f *fakeCompletable) Schemas(ctx context.Context) ([]string, error) {
-	return f.schemas, f.err
+func (f *fakeCompletable) Schemas(ctx context.Context, options Options) ([]string, error) {
+	return f.schemas[options["database"]], f.err
 }
 
-func (f *fakeCompletable) Tables(ctx context.Context, schema string) ([]string, error) {
-	return f.tables[schema], f.err
+func (f *fakeCompletable) Tables(ctx context.Context, options Options) ([]string, error) {
+	return f.tables[options["schema"]], f.err
 }
 
-func (f *fakeCompletable) Columns(ctx context.Context, table string) ([]string, error) {
-	return f.columns[table], f.err
+func (f *fakeCompletable) Columns(ctx context.Context, options Options) ([]string, error) {
+	return f.columns[options["table"]], f.err
 }
 
 func TestCompletable(t *testing.T) {
@@ -79,8 +79,8 @@ func TestCompletable(t *testing.T) {
 		{
 			"it should return schemas",
 			"schemas",
-			&fakeCompletable{schemas: []string{"foo", "bar"}},
-			"",
+			&fakeCompletable{schemas: map[string][]string{"foobar": {"foo", "bar"}}},
+			`{"database":"foobar"}`,
 			`["foo","bar"]` + "\n",
 		},
 		{
@@ -108,7 +108,9 @@ func TestCompletable(t *testing.T) {
 			b := ioutil.NopCloser(bytes.NewReader([]byte(test.reqBody)))
 			switch test.method {
 			case "schemas":
-				sqlds.getSchemas(w, &http.Request{})
+				sqlds.getSchemas(w, &http.Request{
+					Body: b,
+				})
 			case "tables":
 				sqlds.getTables(w, &http.Request{
 					Body: b,

@@ -13,11 +13,14 @@ import (
 // ErrorNotImplemented is returned if the function is not implemented by the provided Driver (the Completable pointer is nil)
 var ErrorNotImplemented = errors.New("not implemented")
 
+// Options are used to query schemas, tables and columns. They will be encoded in the request body (e.g. {"database": "mydb"})
+type Options map[string]string
+
 // Completable will be used to autocomplete Tables Schemas and Columns for SQL languages
 type Completable interface {
-	Schemas(ctx context.Context) ([]string, error)
-	Tables(ctx context.Context, schema string) ([]string, error)
-	Columns(ctx context.Context, table string) ([]string, error)
+	Schemas(ctx context.Context, options Options) ([]string, error)
+	Tables(ctx context.Context, options Options) ([]string, error)
+	Columns(ctx context.Context, options Options) ([]string, error)
 }
 
 func handleError(rw http.ResponseWriter, err error) {
@@ -36,21 +39,22 @@ func sendResourceResponse(rw http.ResponseWriter, res []string) {
 	}
 }
 
-type tableRequest struct {
-	Schema string `json:"schema"`
-}
-
-type columnRequest struct {
-	Table string `json:"table"`
-}
-
 func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
 	if ds.Completable == nil {
 		handleError(rw, ErrorNotImplemented)
 		return
 	}
 
-	res, err := ds.Completable.Schemas(req.Context())
+	options := Options{}
+	if req.Body != nil {
+		err := json.NewDecoder(req.Body).Decode(&options)
+		if err != nil {
+			handleError(rw, err)
+			return
+		}
+	}
+
+	res, err := ds.Completable.Schemas(req.Context(), options)
 	if err != nil {
 		handleError(rw, err)
 		return
@@ -65,12 +69,16 @@ func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	reqBody := tableRequest{}
-	if err := json.NewDecoder(req.Body).Decode(&reqBody); err != nil {
-		handleError(rw, err)
-		return
+	options := Options{}
+	if req.Body != nil {
+		err := json.NewDecoder(req.Body).Decode(&options)
+		if err != nil {
+			handleError(rw, err)
+			return
+		}
 	}
-	res, err := ds.Completable.Tables(req.Context(), reqBody.Schema)
+
+	res, err := ds.Completable.Tables(req.Context(), options)
 	if err != nil {
 		handleError(rw, err)
 		return
@@ -85,12 +93,16 @@ func (ds *sqldatasource) getColumns(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	column := columnRequest{}
-	if err := json.NewDecoder(req.Body).Decode(&column); err != nil {
-		handleError(rw, err)
-		return
+	options := Options{}
+	if req.Body != nil {
+		err := json.NewDecoder(req.Body).Decode(&options)
+		if err != nil {
+			handleError(rw, err)
+			return
+		}
 	}
-	res, err := ds.Completable.Columns(req.Context(), column.Table)
+
+	res, err := ds.Completable.Columns(req.Context(), options)
 	if err != nil {
 		handleError(rw, err)
 		return
