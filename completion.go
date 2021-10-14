@@ -10,6 +10,12 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
+const (
+	schemas = "schemas"
+	tables  = "tables"
+	columns = "columns"
+)
+
 // ErrorNotImplemented is returned if the function is not implemented by the provided Driver (the Completable pointer is nil)
 var ErrorNotImplemented = errors.New("not implemented")
 
@@ -39,83 +45,48 @@ func sendResourceResponse(rw http.ResponseWriter, res []string) {
 	}
 }
 
-func (ds *sqldatasource) getSchemas(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, ErrorNotImplemented)
-		return
-	}
+func (ds *sqldatasource) getResources(rtype string) func(rw http.ResponseWriter, req *http.Request) {
+	return func(rw http.ResponseWriter, req *http.Request) {
+		if ds.Completable == nil {
+			handleError(rw, ErrorNotImplemented)
+			return
+		}
 
-	options := Options{}
-	if req.Body != nil {
-		err := json.NewDecoder(req.Body).Decode(&options)
+		options := Options{}
+		if req.Body != nil {
+			err := json.NewDecoder(req.Body).Decode(&options)
+			if err != nil {
+				handleError(rw, err)
+				return
+			}
+		}
+
+		var res []string
+		var err error
+		switch rtype {
+		case schemas:
+			res, err = ds.Completable.Schemas(req.Context(), options)
+		case tables:
+			res, err = ds.Completable.Tables(req.Context(), options)
+		case columns:
+			res, err = ds.Completable.Columns(req.Context(), options)
+		default:
+			err = fmt.Errorf("unexpected resource type: %s", rtype)
+		}
 		if err != nil {
 			handleError(rw, err)
 			return
 		}
+
+		sendResourceResponse(rw, res)
 	}
-
-	res, err := ds.Completable.Schemas(req.Context(), options)
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
-}
-
-func (ds *sqldatasource) getTables(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, ErrorNotImplemented)
-		return
-	}
-
-	options := Options{}
-	if req.Body != nil {
-		err := json.NewDecoder(req.Body).Decode(&options)
-		if err != nil {
-			handleError(rw, err)
-			return
-		}
-	}
-
-	res, err := ds.Completable.Tables(req.Context(), options)
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
-}
-
-func (ds *sqldatasource) getColumns(rw http.ResponseWriter, req *http.Request) {
-	if ds.Completable == nil {
-		handleError(rw, ErrorNotImplemented)
-		return
-	}
-
-	options := Options{}
-	if req.Body != nil {
-		err := json.NewDecoder(req.Body).Decode(&options)
-		if err != nil {
-			handleError(rw, err)
-			return
-		}
-	}
-
-	res, err := ds.Completable.Columns(req.Context(), options)
-	if err != nil {
-		handleError(rw, err)
-		return
-	}
-
-	sendResourceResponse(rw, res)
 }
 
 func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) error {
 	defaultRoutes := map[string]func(http.ResponseWriter, *http.Request){
-		"/tables":  ds.getTables,
-		"/schemas": ds.getSchemas,
-		"/columns": ds.getColumns,
+		"/tables":  ds.getResources(tables),
+		"/schemas": ds.getResources(schemas),
+		"/columns": ds.getResources(columns),
 	}
 	for route, handler := range defaultRoutes {
 		mux.HandleFunc(route, handler)

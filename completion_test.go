@@ -78,21 +78,21 @@ func TestCompletable(t *testing.T) {
 	}{
 		{
 			"it should return schemas",
-			"schemas",
+			schemas,
 			&fakeCompletable{schemas: map[string][]string{"foobar": {"foo", "bar"}}},
 			`{"database":"foobar"}`,
 			`["foo","bar"]` + "\n",
 		},
 		{
 			"it should return tables of a schema",
-			"tables",
+			tables,
 			&fakeCompletable{tables: map[string][]string{"foobar": {"foo", "bar"}}},
 			`{"schema":"foobar"}`,
 			`["foo","bar"]` + "\n",
 		},
 		{
 			"it should return columns of a table",
-			"columns",
+			columns,
 			&fakeCompletable{columns: map[string][]string{"foobar": {"foo", "bar"}}},
 			`{"table":"foobar"}`,
 			`["foo","bar"]` + "\n",
@@ -106,21 +106,7 @@ func TestCompletable(t *testing.T) {
 			sqlds.Completable = test.fakeImpl
 
 			b := ioutil.NopCloser(bytes.NewReader([]byte(test.reqBody)))
-			switch test.method {
-			case "schemas":
-				sqlds.getSchemas(w, &http.Request{
-					Body: b,
-				})
-			case "tables":
-				sqlds.getTables(w, &http.Request{
-					Body: b,
-				})
-			case "columns":
-				sqlds.getColumns(w, &http.Request{
-					Body: b,
-				})
-			}
-
+			sqlds.getResources(test.method)(w, &http.Request{Body: b})
 			resp := w.Result()
 			body, _ := io.ReadAll(resp.Body)
 
