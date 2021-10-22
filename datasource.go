@@ -17,6 +17,11 @@ import (
 
 const defaultKeySuffix = "default"
 
+var (
+	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
+	MissingDBConnection              = errors.New("unable to get default db connection")
+)
+
 func defaultKey(datasourceID int64) string {
 	return fmt.Sprintf("%d-%s", datasourceID, defaultKeySuffix)
 }
@@ -88,8 +93,8 @@ func NewDatasource(c Driver) *sqldatasource {
 
 // Dispose cleans up datasource instance resources.
 func (ds *sqldatasource) Dispose() {
-	ds.dbConnections.Range(func(key, db interface{}) bool {
-		err := db.(*sql.DB).Close()
+	ds.dbConnections.Range(func(key, dbConn interface{}) bool {
+		err := dbConn.(dbConnection).db.Close()
 		if err != nil {
 			backend.Logger.Error(err.Error())
 		}
@@ -128,14 +133,14 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 func (ds *sqldatasource) getDBConnectionFromQuery(q *Query) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
-		return "", dbConnection{}, fmt.Errorf("received connection arguments but the feature is not enabled")
+		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
 	key := defaultKey(q.DatasourceID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return "", dbConnection{}, fmt.Errorf("unable to get default db connection")
+		return "", dbConnection{}, MissingDBConnection
 	}
 	if !ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
 		return key, dbConn, nil
@@ -222,7 +227,7 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	key := defaultKey(req.PluginContext.DataSourceInstanceSettings.ID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return nil, fmt.Errorf("unable to get default db connection")
+		return nil, MissingDBConnection
 	}
 	if err := dbConn.db.Ping(); err != nil {
 		return &backend.CheckHealthResult{

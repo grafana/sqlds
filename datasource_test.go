@@ -3,6 +3,7 @@ package sqlds
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -79,6 +80,22 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
+		ds := &sqldatasource{c: d, EnableMultipleConnections: false}
+		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")})
+		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
+			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
+		}
+	})
+
+	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
+		ds := &sqldatasource{c: d}
+		_, _, err := ds.getDBConnectionFromQuery(&Query{})
+		if err == nil || !errors.Is(err, MissingDBConnection) {
+			t.Errorf("expecting error: %v", MissingDBConnection)
+		}
+	})
 }
 
 func Test_Dispose(t *testing.T) {
@@ -93,8 +110,8 @@ func Test_Dispose(t *testing.T) {
 		}
 
 		ds := &sqldatasource{}
-		ds.dbConnections.Store(defaultKey, db1)
-		ds.dbConnections.Store("foo", db2)
+		ds.dbConnections.Store(defaultKey(1), dbConnection{db: db1})
+		ds.dbConnections.Store("foo", dbConnection{db: db2})
 
 		mock1.ExpectClose()
 		mock2.ExpectClose()
