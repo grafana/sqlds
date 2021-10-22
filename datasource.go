@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,7 +15,25 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
-const defaultKey = "_default"
+const defaultKeySuffix = "default"
+
+var (
+	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
+	MissingDBConnection              = errors.New("unable to get default db connection")
+)
+
+func defaultKey(datasourceID int64) string {
+	return fmt.Sprintf("%d-%s", datasourceID, defaultKeySuffix)
+}
+
+func keyWithConnectionArgs(datasourceID int64, connArgs json.RawMessage) string {
+	return fmt.Sprintf("%d-%s", datasourceID, string(connArgs))
+}
+
+type dbConnection struct {
+	db       *sql.DB
+	settings backend.DataSourceInstanceSettings
+}
 
 type sqldatasource struct {
 	Completable
@@ -22,7 +41,6 @@ type sqldatasource struct {
 	dbConnections  sync.Map
 	c              Driver
 	driverSettings DriverSettings
-	settings       backend.DataSourceInstanceSettings
 
 	backend.CallResourceHandler
 	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
@@ -32,6 +50,18 @@ type sqldatasource struct {
 	EnableMultipleConnections bool
 }
 
+func (ds *sqldatasource) getDBConnection(key string) (dbConnection, bool) {
+	conn, ok := ds.dbConnections.Load(key)
+	if !ok {
+		return dbConnection{}, false
+	}
+	return conn.(dbConnection), true
+}
+
+func (ds *sqldatasource) storeDBConnection(key string, dbConn dbConnection) {
+	ds.dbConnections.Store(key, dbConn)
+}
+
 // NewDatasource creates a new `sqldatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
 func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
@@ -39,8 +69,9 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	ds.dbConnections.Store(defaultKey, db)
-	ds.settings = settings
+	key := defaultKey(settings.ID)
+	ds.storeDBConnection(key, dbConnection{db, settings})
+
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
 	if err != nil {
@@ -62,8 +93,8 @@ func NewDatasource(c Driver) *sqldatasource {
 
 // Dispose cleans up datasource instance resources.
 func (ds *sqldatasource) Dispose() {
-	ds.dbConnections.Range(func(key, db interface{}) bool {
-		err := db.(*sql.DB).Close()
+	ds.dbConnections.Range(func(key, dbConn interface{}) bool {
+		err := dbConn.(dbConnection).db.Close()
 		if err != nil {
 			backend.Logger.Error(err.Error())
 		}
@@ -100,32 +131,36 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *sqldatasource) getDB(q *Query) (*sql.DB, string, error) {
+func (ds *sqldatasource) getDBConnectionFromQuery(q *Query) (string, dbConnection, error) {
+	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
+		return "", dbConnection{}, MissingMultipleConnectionsConfig
+	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := defaultKey
-	db, ok := ds.dbConnections.Load(key)
+	key := defaultKey(q.DatasourceID)
+	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return nil, "", fmt.Errorf("unable to get default db connection")
+		return "", dbConnection{}, MissingDBConnection
 	}
 	if !ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
-		return db.(*sql.DB), key, nil
+		return key, dbConn, nil
 	}
 
-	key = string(q.ConnectionArgs)
-	if cachedDB, ok := ds.dbConnections.Load(key); ok {
-		return cachedDB.(*sql.DB), key, nil
+	key = keyWithConnectionArgs(q.DatasourceID, q.ConnectionArgs)
+	if cachedConn, ok := ds.getDBConnection(key); ok {
+		return key, cachedConn, nil
 	}
 
 	var err error
-	db, err = ds.c.Connect(ds.settings, q.ConnectionArgs)
+	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return nil, "", err
+		return "", dbConnection{}, err
 	}
 	// Assign this connection in the cache
-	ds.dbConnections.Store(key, db)
+	dbConn = dbConnection{db, dbConn.settings}
+	ds.storeDBConnection(key, dbConn)
 
-	return db.(*sql.DB), key, nil
+	return key, dbConn, nil
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
@@ -149,7 +184,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	}
 
 	// Retrieve the database connection
-	db, cacheKey, err := ds.getDB(q)
+	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q)
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
@@ -165,7 +200,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	res, err := query(ctx, db, ds.c.Converters(), fillMode, q)
+	res, err := query(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
@@ -175,11 +210,11 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	}
 
 	if errors.Is(err, ErrorQuery) {
-		db, err = ds.c.Connect(ds.settings, q.ConnectionArgs)
+		db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 		if err != nil {
 			return nil, err
 		}
-		ds.dbConnections.Store(cacheKey, db)
+		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
 		return query(ctx, db, ds.c.Converters(), fillMode, q)
 	}
@@ -189,11 +224,12 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 
 // CheckHealth pings the connected SQL database
 func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	db, ok := ds.dbConnections.Load(defaultKey)
+	key := defaultKey(req.PluginContext.DataSourceInstanceSettings.ID)
+	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return nil, fmt.Errorf("unable to get default db connection")
+		return nil, MissingDBConnection
 	}
-	if err := db.(*sql.DB).Ping(); err != nil {
+	if err := dbConn.db.Ping(); err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: err.Error(),
