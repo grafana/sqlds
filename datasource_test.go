@@ -19,54 +19,63 @@ func (d *fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage
 	return d.db, nil
 }
 
-func Test_getDB(t *testing.T) {
+func Test_getDBConnectionFromQuery(t *testing.T) {
 	db := &sql.DB{}
 	db2 := &sql.DB{}
-	d := &fakeDriver{db: db2}
+	db3 := &sql.DB{}
+	d := &fakeDriver{db: db3}
 	tests := []struct {
-		desc       string
-		args       string
-		existingDB *sql.DB
-		expectedDB *sql.DB
+		desc        string
+		dsID        int64
+		args        string
+		existingDB  *sql.DB
+		expectedKey string
+		expectedDB  *sql.DB
 	}{
 		{
-			"it should return the default db with no args",
-			defaultKey,
-			db,
-			db,
+			desc:        "it should return the default db with no args",
+			dsID:        1,
+			args:        "",
+			expectedKey: "1-default",
+			expectedDB:  db,
 		},
 		{
-			"it should return the cached connection for the given args",
-			"foo",
-			db,
-			db,
+			desc:        "it should return the cached connection for the given args",
+			dsID:        1,
+			args:        "foo",
+			expectedKey: "1-foo",
+			existingDB:  db2,
+			expectedDB:  db2,
 		},
 		{
-			"it should create a new connection with the given args",
-			"foo",
-			nil,
-			db2,
+			desc:        "it should create a new connection with the given args",
+			dsID:        1,
+			args:        "foo",
+			expectedKey: "1-foo",
+			expectedDB:  db3,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			ds := &sqldatasource{c: d, EnableMultipleConnections: true}
+			settings := backend.DataSourceInstanceSettings{ID: tt.dsID}
+			key := defaultKey(tt.dsID)
+			// Add the mandatory default db
+			ds.storeDBConnection(key, dbConnection{db, settings})
 			if tt.existingDB != nil {
-				ds.dbConnections.Store(tt.args, tt.existingDB)
+				key = keyWithConnectionArgs(tt.dsID, []byte(tt.args))
+				ds.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
-			if tt.args != defaultKey {
-				// Add the mandatory default db
-				ds.dbConnections.Store(defaultKey, db)
-			}
-			res, key, err := ds.getDB(&Query{ConnectionArgs: json.RawMessage(tt.args)})
+
+			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{DatasourceID: tt.dsID, ConnectionArgs: json.RawMessage(tt.args)})
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
-			if key != tt.args {
+			if key != tt.expectedKey {
 				t.Fatalf("unexpected cache key %s", key)
 			}
-			if res != tt.expectedDB {
-				t.Fatalf("unexpected result %v", res)
+			if dbConn.db != tt.expectedDB {
+				t.Fatalf("unexpected result %v", dbConn.db)
 			}
 		})
 	}
