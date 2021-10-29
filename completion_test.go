@@ -3,12 +3,16 @@ package sqlds
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func Test_handleError(t *testing.T) {
@@ -168,4 +172,35 @@ func Test_registerRoutes(t *testing.T) {
 			t.Errorf("unexpected error %v", err)
 		}
 	})
+}
+
+func TestParseOptions(t *testing.T) {
+	tests := []struct {
+		description string
+		input       json.RawMessage
+		result      Options
+		err         error
+	}{
+		{
+			description: "parses input",
+			input:       json.RawMessage(`{"foo":"bar"}`),
+			result:      Options{"foo": "bar"},
+		},
+		{
+			description: "returns an error",
+			input:       json.RawMessage(`not a json`),
+			err:         ErrorWrongOptions,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			res, err := ParseOptions(tc.input)
+			if (err != nil || tc.err != nil) && !errors.Is(err, tc.err) {
+				t.Errorf("unexpected error %v", err)
+			}
+			if !cmp.Equal(res, tc.result) {
+				t.Errorf("unexpected result: %v", cmp.Diff(res, tc.result))
+			}
+		})
+	}
 }
