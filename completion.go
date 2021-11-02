@@ -16,8 +16,12 @@ const (
 	columns = "columns"
 )
 
-// ErrorNotImplemented is returned if the function is not implemented by the provided Driver (the Completable pointer is nil)
-var ErrorNotImplemented = errors.New("not implemented")
+var (
+	// ErrorNotImplemented is returned if the function is not implemented by the provided Driver (the Completable pointer is nil)
+	ErrorNotImplemented = errors.New("not implemented")
+	// ErrorWrongOptions when trying to parse Options with a invalid JSON
+	ErrorWrongOptions = errors.New("error reading query options")
+)
 
 // Options are used to query schemas, tables and columns. They will be encoded in the request body (e.g. {"database": "mydb"})
 type Options map[string]string
@@ -98,4 +102,15 @@ func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) error {
 		mux.HandleFunc(route, handler)
 	}
 	return nil
+}
+
+func ParseOptions(rawOptions json.RawMessage) (Options, error) {
+	args := Options{}
+	if rawOptions != nil {
+		err := json.Unmarshal(rawOptions, &args)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrorWrongOptions, err)
+		}
+	}
+	return args, nil
 }
