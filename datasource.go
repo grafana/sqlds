@@ -22,12 +22,12 @@ var (
 	MissingDBConnection              = errors.New("unable to get default db connection")
 )
 
-func defaultKey(datasourceID int64) string {
-	return fmt.Sprintf("%d-%s", datasourceID, defaultKeySuffix)
+func defaultKey(datasourceUID string) string {
+	return fmt.Sprintf("%s-%s", datasourceUID, defaultKeySuffix)
 }
 
-func keyWithConnectionArgs(datasourceID int64, connArgs json.RawMessage) string {
-	return fmt.Sprintf("%d-%s", datasourceID, string(connArgs))
+func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) string {
+	return fmt.Sprintf("%s-%s", datasourceUID, string(connArgs))
 }
 
 type dbConnection struct {
@@ -69,7 +69,7 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	key := defaultKey(settings.ID)
+	key := defaultKey(settings.UID)
 	ds.storeDBConnection(key, dbConnection{db, settings})
 
 	mux := http.NewServeMux()
@@ -115,7 +115,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(ctx, query)
+			frames, err := ds.handleQuery(ctx, query, req.PluginContext.DataSourceInstanceSettings.UID)
 
 			response.Set(query.RefID, backend.DataResponse{
 				Frames: frames,
@@ -131,13 +131,13 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *sqldatasource) getDBConnectionFromQuery(q *Query) (string, dbConnection, error) {
+func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := defaultKey(q.DatasourceID)
+	key := defaultKey(datasourceUID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
 		return "", dbConnection{}, MissingDBConnection
@@ -146,7 +146,7 @@ func (ds *sqldatasource) getDBConnectionFromQuery(q *Query) (string, dbConnectio
 		return key, dbConn, nil
 	}
 
-	key = keyWithConnectionArgs(q.DatasourceID, q.ConnectionArgs)
+	key = keyWithConnectionArgs(datasourceUID, q.ConnectionArgs)
 	if cachedConn, ok := ds.getDBConnection(key); ok {
 		return key, cachedConn, nil
 	}
@@ -164,7 +164,7 @@ func (ds *sqldatasource) getDBConnectionFromQuery(q *Query) (string, dbConnectio
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery) (data.Frames, error) {
+func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
 	// Convert the backend.DataQuery into a Query object
 	q, err := GetQuery(req)
 	if err != nil {
@@ -184,7 +184,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 	}
 
 	// Retrieve the database connection
-	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q)
+	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
@@ -224,7 +224,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery)
 
 // CheckHealth pings the connected SQL database
 func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	key := defaultKey(req.PluginContext.DataSourceInstanceSettings.ID)
+	key := defaultKey(req.PluginContext.DataSourceInstanceSettings.UID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
 		return nil, MissingDBConnection

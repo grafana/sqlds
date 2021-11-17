@@ -37,7 +37,6 @@ type Query struct {
 	Interval      time.Duration     `json:"-"`
 	TimeRange     backend.TimeRange `json:"-"`
 	MaxDataPoints int64             `json:"-"`
-	DatasourceID  int64             `json:"datasourceId"`
 	FillMissing   *data.FillMissing `json:"fillMode,omitempty"`
 
 	// Macros
@@ -55,7 +54,6 @@ func (q *Query) WithSQL(query string) *Query {
 		RefID:          q.RefID,
 		Interval:       q.Interval,
 		TimeRange:      q.TimeRange,
-		DatasourceID:   q.DatasourceID,
 		MaxDataPoints:  q.MaxDataPoints,
 		FillMissing:    q.FillMissing,
 		Schema:         q.Schema,
@@ -80,7 +78,6 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 		RefID:          query.RefID,
 		Interval:       query.Interval,
 		TimeRange:      query.TimeRange,
-		DatasourceID:   model.DatasourceID,
 		MaxDataPoints:  query.MaxDataPoints,
 		FillMissing:    model.FillMissing,
 		Schema:         model.Schema,
