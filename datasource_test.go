@@ -27,7 +27,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	d := &fakeDriver{db: db3}
 	tests := []struct {
 		desc        string
-		dsID        string
+		dsUID       string
 		args        string
 		existingDB  *sql.DB
 		expectedKey string
@@ -35,14 +35,14 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}{
 		{
 			desc:        "it should return the default db with no args",
-			dsID:        "uid1",
+			dsUID:       "uid1",
 			args:        "",
 			expectedKey: "uid1-default",
 			expectedDB:  db,
 		},
 		{
 			desc:        "it should return the cached connection for the given args",
-			dsID:        "uid1",
+			dsUID:       "uid1",
 			args:        "foo",
 			expectedKey: "uid1-foo",
 			existingDB:  db2,
@@ -50,7 +50,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 		},
 		{
 			desc:        "it should create a new connection with the given args",
-			dsID:        "uid1",
+			dsUID:       "uid1",
 			args:        "foo",
 			expectedKey: "uid1-foo",
 			expectedDB:  db3,
@@ -59,16 +59,16 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			ds := &sqldatasource{c: d, EnableMultipleConnections: true}
-			settings := backend.DataSourceInstanceSettings{UID: tt.dsID}
-			key := defaultKey(tt.dsID)
+			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
+			key := defaultKey(tt.dsUID)
 			// Add the mandatory default db
 			ds.storeDBConnection(key, dbConnection{db, settings})
 			if tt.existingDB != nil {
-				key = keyWithConnectionArgs(tt.dsID, []byte(tt.args))
+				key = keyWithConnectionArgs(tt.dsUID, []byte(tt.args))
 				ds.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
-			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsID)
+			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -83,7 +83,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
 		ds := &sqldatasource{c: d, EnableMultipleConnections: false}
-		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsid")
+		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
 		}
@@ -91,7 +91,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
 		ds := &sqldatasource{c: d}
-		_, _, err := ds.getDBConnectionFromQuery(&Query{}, "dsid")
+		_, _, err := ds.getDBConnectionFromQuery(&Query{}, "dsUID")
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
 		}
