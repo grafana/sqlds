@@ -62,6 +62,15 @@ func (ds *sqldatasource) storeDBConnection(key string, dbConn dbConnection) {
 	ds.dbConnections.Store(key, dbConn)
 }
 
+func getDatasourceUID(settings backend.DataSourceInstanceSettings) string {
+	datasourceUID := settings.UID
+	// Grafana < 8.0 won't include the UID yet
+	if datasourceUID == "" {
+		datasourceUID = fmt.Sprintf("%d", settings.ID)
+	}
+	return datasourceUID
+}
+
 // NewDatasource creates a new `sqldatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
 func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
@@ -69,7 +78,7 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	key := defaultKey(settings.UID)
+	key := defaultKey(getDatasourceUID(settings))
 	ds.storeDBConnection(key, dbConnection{db, settings})
 
 	mux := http.NewServeMux()
@@ -115,7 +124,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(ctx, query, req.PluginContext.DataSourceInstanceSettings.UID)
+			frames, err := ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 
 			response.Set(query.RefID, backend.DataResponse{
 				Frames: frames,
