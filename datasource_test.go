@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
@@ -99,36 +98,18 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 }
 
 func Test_Dispose(t *testing.T) {
-	t.Run("it should close all db connections", func(t *testing.T) {
-		db1, mock1, err := sqlmock.New()
-		if err != nil {
-			t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-		}
-		db2, mock2, err := sqlmock.New()
-		if err != nil {
-			t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-		}
-
+	t.Run("it should not delete connections", func(t *testing.T) {
 		ds := &sqldatasource{}
-		ds.dbConnections.Store(defaultKey("uid1"), dbConnection{db: db1})
-		ds.dbConnections.Store("foo", dbConnection{db: db2})
-
-		mock1.ExpectClose()
-		mock2.ExpectClose()
+		ds.dbConnections.Store(defaultKey("uid1"), dbConnection{})
+		ds.dbConnections.Store("foo", dbConnection{})
 		ds.Dispose()
-
-		err = mock1.ExpectationsWereMet()
-		if err != nil {
-			t.Error(err)
-		}
-		err = mock2.ExpectationsWereMet()
-		if err != nil {
-			t.Error(err)
-		}
-
+		count := 0
 		ds.dbConnections.Range(func(key, value interface{}) bool {
-			t.Errorf("db connections were not deleted")
-			return false
+			count++
+			return true
 		})
+		if count != 2 {
+			t.Errorf("missing connections")
+		}
 	})
 }
