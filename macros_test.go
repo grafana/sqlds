@@ -79,3 +79,28 @@ func TestInterpolate(t *testing.T) {
 		})
 	}
 }
+
+func TestGetMacroRegex(t *testing.T) {
+	t.Run("returns composed regular expression", func(t *testing.T) {
+		assert.Equal(t, `\$__some_string\b(?:\((.*?)\))?`, getMacroRegex("some_string"))
+	})
+	t.Run("FindAllStringSubmatch returns DefaultMacros", func(t *testing.T) {
+		for macroName := range DefaultMacros {
+			matches, err := getMatches(macroName, fmt.Sprintf("$__%s", macroName))
+
+			assert.NoError(t, err)
+			assert.Equal(t, [][]string{{fmt.Sprintf("$__%s", macroName), ""}}, matches)
+		}
+	})
+}
+
+func TestGetMacroRegex_returns_composed_regular_expression(t *testing.T) {
+	assert.Equal(t, `\$__some_string\b(?:\((.*?)\))?`, getMacroRegex("some_string"))
+}
+
+func TestGetMatches_does_not_match_for_macro_name_which_is_substring(t *testing.T) {
+	matches, err := getMatches("timeFilter", "$__timeFilterEpoch(time_column)")
+
+	assert.NoError(t, err)
+	assert.Nil(t, matches)
+}
