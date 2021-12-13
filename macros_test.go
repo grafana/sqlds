@@ -19,6 +19,9 @@ func (h *MockDB) Macros() (macros Macros) {
 		"foo": func(query *Query, args []string) (out string, err error) {
 			return "bar", nil
 		},
+		"fooBaz": func(query *Query, args []string) (out string, err error) {
+			return "qux", nil
+		},
 		"params": func(query *Query, args []string) (out string, err error) {
 			if args[0] != "" {
 				return "bar_" + args[0], nil
@@ -47,6 +50,7 @@ func TestInterpolate(t *testing.T) {
 	tests := []test{
 		{input: "select * from foo", output: "select * from foo", name: "macro with incorrect syntax"},
 		{input: "select * from $__foo()", output: "select * from bar", name: "correct macro"},
+		{input: "select * from $__fooBaz()", output: "select * from qux", name: "this macro name's substring is another macro"},
 		{input: "select '$__foo()' from $__foo()", output: "select 'bar' from bar", name: "multiple instances of same macro"},
 		{input: "select * from $__foo()$__foo()", output: "select * from barbar", name: "multiple instances of same macro without space"},
 		{input: "select * from $__foo", output: "select * from bar", name: "macro without paranthesis"},
