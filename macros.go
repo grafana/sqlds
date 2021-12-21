@@ -141,11 +141,10 @@ func interpolate(driver Driver, query *Query) (string, error) {
 	}
 	rawSQL := query.RawSQL
 	for key, macro := range macros {
-		rgx, err := regexp.Compile(getMacroRegex(key))
+		matches, err := getMatches(key, rawSQL)
 		if err != nil {
 			return rawSQL, err
 		}
-		matches := rgx.FindAllStringSubmatch(rawSQL, -1)
 		for _, match := range matches {
 			if len(match) == 0 {
 				// There were no matches for this macro
@@ -169,4 +168,12 @@ func interpolate(driver Driver, query *Query) (string, error) {
 	}
 
 	return rawSQL, nil
+}
+
+func getMatches(macroName, rawSQL string) ([][]string, error) {
+	rgx, err := regexp.Compile(getMacroRegex(macroName))
+	if err != nil {
+		return nil, err
+	}
+	return rgx.FindAllStringSubmatch(rawSQL, -1), nil
 }
