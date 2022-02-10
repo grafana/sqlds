@@ -73,7 +73,7 @@ func TestInterpolate(t *testing.T) {
 				Table:  tableName,
 				Column: tableColumn,
 			}
-			interpolatedQuery, err := interpolate(&driver, query)
+			interpolatedQuery, err := Interpolate(&driver, query)
 			require.Nil(t, err)
 			assert.Equal(t, tc.output, interpolatedQuery)
 		})

@@ -131,7 +131,8 @@ func getMacroRegex(name string) string {
 	return fmt.Sprintf("\\$__%s\\b(?:\\((.*?)\\))?", name)
 }
 
-func interpolate(driver Driver, query *Query) (string, error) {
+// Interpolate returns an interpolated query string given a backend.DataQuery
+func Interpolate(driver Driver, query *Query) (string, error) {
 	macros := driver.Macros()
 	for key, defaultMacro := range DefaultMacros {
 		if _, ok := macros[key]; !ok {
