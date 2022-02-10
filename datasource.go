@@ -174,7 +174,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Apply supported macros to the query
-	q.RawSQL, err = interpolate(ds.c, q)
+	q.RawSQL, err = Interpolate(ds.c, q)
 	if err != nil {
 		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
 	}
