@@ -146,8 +146,10 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	}
 
 	frame.Meta.ExecutedQueryString = query.RawSQL
+	frame.Meta.PreferredVisualization = data.VisTypeGraph
 
 	if query.Format == FormatOptionTable {
+		frame.Meta.PreferredVisualization = data.VisTypeTable
 		return data.Frames{frame}, nil
 	}
 
