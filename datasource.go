@@ -226,7 +226,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 // CheckHealth pings the connected SQL database
 func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	key := defaultKey(req.PluginContext.DataSourceInstanceSettings.UID)
+	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
 		return nil, MissingDBConnection
