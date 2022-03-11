@@ -8,14 +8,20 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	gocache "github.com/patrickmn/go-cache"
 )
 
-const defaultKeySuffix = "default"
+const (
+	defaultKeySuffix = "default"
+	ttl              = 5 * time.Minute
+	cleanInterval    = 2 * time.Minute
+)
 
 var (
 	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
@@ -33,6 +39,7 @@ func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) strin
 type dbConnection struct {
 	db       *sql.DB
 	settings backend.DataSourceInstanceSettings
+	asyncDB  AsyncDB
 }
 
 type sqldatasource struct {
@@ -40,7 +47,9 @@ type sqldatasource struct {
 
 	dbConnections  sync.Map
 	c              Driver
+	asyncDBGetter  AsyncDBGetter
 	driverSettings DriverSettings
+	cache          *gocache.Cache
 
 	backend.CallResourceHandler
 	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
@@ -78,8 +87,17 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
+
+	var asyncDB AsyncDB
+	if ds.asyncDBGetter != nil {
+		asyncDB, err = ds.asyncDBGetter.GetAsyncDB(settings, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	key := defaultKey(getDatasourceUID(settings))
-	ds.storeDBConnection(key, dbConnection{db, settings})
+	ds.storeDBConnection(key, dbConnection{db: db, asyncDB: asyncDB, settings: settings})
 
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
@@ -89,6 +107,8 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 
 	ds.CallResourceHandler = httpadapter.New(mux)
 	ds.driverSettings = ds.c.Settings(settings)
+
+	ds.cache = gocache.New(ttl, cleanInterval)
 
 	return ds, nil
 }
@@ -100,9 +120,41 @@ func NewDatasource(c Driver) *sqldatasource {
 	}
 }
 
+// NewAsyncDatasource initializes the Datasource wrapper and instance manager
+func NewAsyncDatasource(c Driver, a AsyncDBGetter) *sqldatasource {
+	return &sqldatasource{
+		c:             c,
+		asyncDBGetter: a,
+	}
+}
+
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
 func (ds *sqldatasource) Dispose() {
+}
+
+// type handler func(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error)
+
+// func (s *sqldatasource) newQueryMux() *datasource.QueryTypeMux {
+// 	mux := datasource.NewQueryTypeMux()
+// 	executors := map[string]handler{"async": s.QueryDataAsync, "": s.QueryDataSync}
+// 	for dsType := range executors {
+// 		// Make a copy of the string to keep the reference after the iterator
+// 		dst := dsType
+// 		mux.HandleFunc(dsType, func(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+// 			return executors[dst](ctx, req)
+// 		})
+// 	}
+// 	return mux
+// }
+
+// func (s *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+// 	return s.queryMux.QueryData(ctx, req)
+// }
+
+type queryMeta struct {
+	QueryID string `json:"queryID"`
+	Status  string `json:"status"`
 }
 
 // QueryData creates the Responses list and executes each query
@@ -117,7 +169,14 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
+			var frames data.Frames
+			var err error
+			_, isFromAlert := req.Headers["FromAlert"]
+			if ds.asyncDBGetter != nil && !isFromAlert {
+				frames, err = ds.handleAsyncQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
+			} else {
+				frames, err = ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
+			}
 
 			response.Set(query.RefID, backend.DataResponse{
 				Frames: frames,
@@ -133,8 +192,8 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
-	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
+func (ds *sqldatasource) getDBConnectionFromConnArgs(datasourceUID string, connArgs json.RawMessage) (string, dbConnection, error) {
+	if !ds.EnableMultipleConnections && len(connArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
@@ -144,25 +203,170 @@ func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 	if !ok {
 		return "", dbConnection{}, MissingDBConnection
 	}
-	if !ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
+	if !ds.EnableMultipleConnections || len(connArgs) == 0 {
 		return key, dbConn, nil
 	}
 
-	key = keyWithConnectionArgs(datasourceUID, q.ConnectionArgs)
+	key = keyWithConnectionArgs(datasourceUID, connArgs)
 	if cachedConn, ok := ds.getDBConnection(key); ok {
 		return key, cachedConn, nil
 	}
 
-	var err error
-	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+	db, err := ds.c.Connect(dbConn.settings, connArgs)
 	if err != nil {
 		return "", dbConnection{}, err
 	}
+	var asyncDB AsyncDB
+	if ds.asyncDBGetter != nil {
+		asyncDB, err = ds.asyncDBGetter.GetAsyncDB(dbConn.settings, connArgs)
+		if err != nil {
+			return "", dbConnection{}, err
+		}
+	}
+
 	// Assign this connection in the cache
-	dbConn = dbConnection{db, dbConn.settings}
+	dbConn = dbConnection{db: db, asyncDB: asyncDB, settings: dbConn.settings}
 	ds.storeDBConnection(key, dbConn)
 
 	return key, dbConn, nil
+}
+
+type queryWithoutPtrs struct {
+	RawSQL         string
+	Format         FormatQueryOption
+	ConnectionArgs json.RawMessage
+
+	RefID         string
+	Interval      time.Duration
+	TimeRange     backend.TimeRange
+	MaxDataPoints int64
+	FillMissing   data.FillMissing
+}
+type queryInfo struct {
+	DbConnection dbConnection
+	Q            Query
+}
+
+func queryInfoToHash(qInfo queryInfo) string {
+	q := queryWithoutPtrs{
+		RawSQL:         qInfo.Q.RawSQL,
+		Format:         qInfo.Q.Format,
+		ConnectionArgs: qInfo.Q.ConnectionArgs,
+		RefID:          qInfo.Q.RefID,
+		Interval:       qInfo.Q.Interval,
+		TimeRange:      qInfo.Q.TimeRange,
+		MaxDataPoints:  qInfo.Q.MaxDataPoints,
+	}
+	if qInfo.Q.FillMissing != nil {
+		q.FillMissing = *qInfo.Q.FillMissing
+	}
+	return fmt.Sprintf("%v", struct {
+		DbConnection dbConnection
+		Q            queryWithoutPtrs
+	}{DbConnection: qInfo.DbConnection, Q: q})
+}
+
+// handleQuery will call query, and attempt to reconnect if the query failed
+func (ds *sqldatasource) handleAsyncQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
+	// Convert the backend.DataQuery into a Query object
+	q, err := GetQuery(req)
+	if err != nil {
+		return getErrorFrameFromQuery(q), err
+	}
+
+	// Apply supported macros to the query
+	q.RawSQL, err = interpolate(ds.c, q)
+	if err != nil {
+		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
+	}
+
+	// Apply the default FillMode, overwritting it if the query specifies it
+	fillMode := ds.driverSettings.FillMode
+	if q.FillMissing != nil {
+		fillMode = q.FillMissing
+	}
+
+	// Retrieve the database connection
+	cacheKey, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, q.ConnectionArgs)
+	if err != nil {
+		return getErrorFrameFromQuery(q), err
+	}
+
+	if ds.driverSettings.Timeout != 0 {
+		tctx, cancel := context.WithTimeout(ctx, ds.driverSettings.Timeout)
+		defer cancel()
+
+		ctx = tctx
+	}
+
+	info := queryInfo{dbConn, *q}
+	cachedQueryKey := queryInfoToHash(info)
+	cachedQuery, ok := ds.cache.Get(cachedQueryKey)
+	if ok && q.QueryID == "" {
+		q.QueryID = cachedQuery.(string)
+	}
+
+	if dbConn.asyncDB == nil {
+		return nil, fmt.Errorf("unable to get AsyncDB")
+	}
+	if q.QueryID == "" {
+		queryID, err := startQuery(ctx, dbConn.asyncDB, q)
+		if err != nil {
+			return getErrorFrameFromQuery(q), err
+		}
+		ds.cache.Set(cachedQueryKey, queryID, ttl)
+		return data.Frames{
+			{Meta: &data.FrameMeta{
+				ExecutedQueryString: q.RawSQL,
+				Custom:              queryMeta{QueryID: queryID, Status: "started"}},
+			},
+		}, nil
+	}
+
+	finished, statusMsg, err := queryStatus(ctx, dbConn.asyncDB, q)
+	if err != nil {
+		return getErrorFrameFromQuery(q), err
+	}
+	if !finished {
+		return data.Frames{
+			{Meta: &data.FrameMeta{
+				ExecutedQueryString: q.RawSQL,
+				Custom:              queryMeta{QueryID: q.QueryID, Status: statusMsg}},
+			},
+		}, nil
+	}
+	res, err := queryAsync(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
+
+	if err == nil {
+		return res, nil
+	}
+
+	if errors.Is(err, ErrorNoResults) {
+		return res, nil
+	}
+
+	if errors.Is(err, ErrorQuery) {
+		db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+		if err != nil {
+			return nil, err
+		}
+
+		var asyncDB AsyncDB
+		if ds.asyncDBGetter != nil {
+			asyncDB, err = ds.asyncDBGetter.GetAsyncDB(dbConn.settings, q.ConnectionArgs)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// Assign this connection in the cache
+		dbConn = dbConnection{db: db, asyncDB: asyncDB, settings: dbConn.settings}
+		ds.storeDBConnection(cacheKey, dbConn)
+
+		return queryAsync(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
+	}
+
+	return nil, err
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
@@ -186,7 +390,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Retrieve the database connection
-	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+	cacheKey, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, q.ConnectionArgs)
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
@@ -218,7 +422,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		if err != nil {
 			return nil, err
 		}
-		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
+		ds.storeDBConnection(cacheKey, dbConnection{db: db, settings: dbConn.settings})
 
 		return query(ctx, db, ds.c.Converters(), fillMode, q)
 	}

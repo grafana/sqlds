@@ -43,6 +43,9 @@ type Query struct {
 	Schema string `json:"schema,omitempty"`
 	Table  string `json:"table,omitempty"`
 	Column string `json:"column,omitempty"`
+
+	// Async
+	QueryID string `json:"queryID,omitempty"`
 }
 
 // WithSQL copies the Query, but with a different RawSQL value.
@@ -59,6 +62,7 @@ func (q *Query) WithSQL(query string) *Query {
 		Schema:         q.Schema,
 		Table:          q.Table,
 		Column:         q.Column,
+		QueryID:        q.QueryID,
 	}
 }
 
@@ -83,6 +87,7 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 		Schema:         model.Schema,
 		Table:          model.Table,
 		Column:         model.Column,
+		QueryID:        model.QueryID,
 	}, nil
 }
 
@@ -95,6 +100,57 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 	}
 	frames = append(frames, frame)
 	return frames
+}
+
+func startQuery(ctx context.Context, db AsyncDB, query *Query) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("Async handler not defined")
+	}
+	return db.StartQuery(ctx, query.RawSQL)
+}
+
+func queryStatus(ctx context.Context, db AsyncDB, query *Query) (bool, string, error) {
+	if db == nil {
+		return false, "", fmt.Errorf("Async handler not defined")
+	}
+	return db.QueryStatus(ctx, query.QueryID)
+}
+
+func queryAsync(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+	// Query the rows from the database
+	rows, err := db.QueryContext(ctx, query.RawSQL, sql.NamedArg{Name: "queryID", Value: query.QueryID})
+	if err != nil {
+		errType := ErrorQuery
+		if errors.Is(err, context.Canceled) {
+			errType = context.Canceled
+		}
+
+		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", errType, err.Error())
+	}
+
+	// Check for an error response
+	if err := rows.Err(); err != nil {
+		if err == sql.ErrNoRows {
+			// Should we even response with an error here?
+			// The panel will simply show "no data"
+			return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "No results from query", err)
+		}
+		return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "Error response from database", err)
+	}
+
+	defer func() {
+		if err := rows.Close(); err != nil {
+			backend.Logger.Error(err.Error())
+		}
+	}()
+
+	// Convert the response to frames
+	res, err := getFrames(rows, -1, converters, fillMode, query)
+	if err != nil {
+		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", err, "Could not process SQL results")
+	}
+
+	return res, nil
 }
 
 // query sends the query to the connection and converts the rows to a dataframe.

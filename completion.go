@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 )
 
 const (
@@ -86,11 +87,52 @@ func (ds *sqldatasource) getResources(rtype string) func(rw http.ResponseWriter,
 	}
 }
 
+func (ds *sqldatasource) cancelQuery(rw http.ResponseWriter, req *http.Request) {
+	options := Options{}
+	if req.Body != nil {
+		err := json.NewDecoder(req.Body).Decode(&options)
+		if err != nil {
+			handleError(rw, err)
+			return
+		}
+	}
+	if options["queryId"] == "" {
+		handleError(rw, fmt.Errorf("missing queryId in request"))
+		return
+	}
+	ctx := req.Context()
+	plugin := httpadapter.PluginConfigFromContext(ctx)
+	if plugin.DataSourceInstanceSettings != nil {
+		datasourceUID := getDatasourceUID(*plugin.DataSourceInstanceSettings)
+		// TODO: Add connectionArgs support?
+		_, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, nil)
+		if err != nil {
+			handleError(rw, err)
+			return
+		}
+		if dbConn.asyncDB != nil {
+			err := dbConn.asyncDB.CancelQuery(ctx, options["queryId"])
+			ds.cache.Delete(options["queryId"])
+			if err != nil {
+				handleError(rw, err)
+				return
+			}
+		} else {
+			handleError(rw, fmt.Errorf("unable to retrieve async DB connection"))
+			return
+		}
+	} else {
+		handleError(rw, fmt.Errorf("unable to get plugin ID from context"))
+		return
+	}
+}
+
 func (ds *sqldatasource) registerRoutes(mux *http.ServeMux) error {
 	defaultRoutes := map[string]func(http.ResponseWriter, *http.Request){
 		"/tables":  ds.getResources(tables),
 		"/schemas": ds.getResources(schemas),
 		"/columns": ds.getResources(columns),
+		"/cancel":  ds.cancelQuery,
 	}
 	for route, handler := range defaultRoutes {
 		mux.HandleFunc(route, handler)

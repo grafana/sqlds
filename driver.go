@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"time"
 
@@ -25,6 +26,23 @@ type Driver interface {
 	Settings(backend.DataSourceInstanceSettings) DriverSettings
 	Macros() Macros
 	Converters() []sqlutil.Converter
+}
+
+type AsyncDB interface {
+	// Async flow
+	StartQuery(ctx context.Context, query string, args ...interface{}) (string, error)
+	QueryStatus(ctx context.Context, queryID string) (bool, string, error)
+	CancelQuery(ctx context.Context, queryID string) error
+	GetRows(ctx context.Context, queryID string) (driver.Rows, error)
+	// DB generic methods
+	Ping(ctx context.Context) error
+	Begin() (driver.Tx, error)
+	Prepare(query string) (driver.Stmt, error)
+	Close() error
+}
+
+type AsyncDBGetter interface {
+	GetAsyncDB(backend.DataSourceInstanceSettings, json.RawMessage) (AsyncDB, error)
 }
 
 // Connection represents a SQL connection and is satisfied by the *sql.DB type
