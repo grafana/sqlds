@@ -211,7 +211,9 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return res, nil
 	}
 
-	if errors.Is(err, ErrorQuery) {
+	// If there's a query error that didn't exceed the
+	// context deadline retry the query
+	if errors.Is(err, ErrorQuery) && !errors.Is(err, context.DeadlineExceeded) {
 		db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 		if err != nil {
 			return nil, err
