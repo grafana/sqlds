@@ -218,11 +218,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		}
 		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
-		retryRes, retryErr := query(ctx, db, ds.c.Converters(), fillMode, q)
-		if retryErr == nil {
-			return retryRes, nil
-		}
-		return nil, retryErr
+		return query(ctx, db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err
