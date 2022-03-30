@@ -128,7 +128,7 @@ func trimAll(s []string) []string {
 }
 
 func getMacroRegex(name string) string {
-	return fmt.Sprintf("\\$__%s\\b(?:\\((.*?)\\))?", name)
+	return fmt.Sprintf("\\$__%s\\b(?:\\((.*?\\)?)\\))?", name)
 }
 
 // Interpolate returns an interpolated query string given a backend.DataQuery
