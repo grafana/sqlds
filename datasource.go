@@ -170,7 +170,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// Convert the backend.DataQuery into a Query object
 	q, err := GetQuery(req)
 	if err != nil {
-		return getErrorFrameFromQuery(q), err
+		return nil, err
 	}
 
 	// Apply supported macros to the query
