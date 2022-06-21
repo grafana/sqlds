@@ -275,10 +275,11 @@ func (ds *sqldatasource) handleAsyncQuery(ctx context.Context, req backend.DataQ
 	}
 
 	// Apply supported macros to the query
-	q.RawSQL, err = interpolate(ds.c, q)
-	if err != nil {
-		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
-	}
+	// TODO: Re-enable
+	// q.RawSQL, err = interpolate(ds.c, q)
+	// if err != nil {
+	// 	return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
+	// }
 
 	// Apply the default FillMode, overwritting it if the query specifies it
 	fillMode := ds.driverSettings.FillMode
