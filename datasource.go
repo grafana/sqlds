@@ -18,8 +18,8 @@ import (
 const defaultKeySuffix = "default"
 
 var (
-	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
-	MissingDBConnection              = errors.New("unable to get default db connection")
+	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
+	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
 )
 
 func defaultKey(datasourceUID string) string {
@@ -32,6 +32,7 @@ func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) strin
 
 type dbConnection struct {
 	db       *sql.DB
+	asyncDB  AsyncDB
 	settings backend.DataSourceInstanceSettings
 }
 
@@ -40,6 +41,7 @@ type sqldatasource struct {
 
 	dbConnections  sync.Map
 	c              Driver
+	a              AsyncDBGetter
 	driverSettings DriverSettings
 
 	backend.CallResourceHandler
@@ -78,8 +80,16 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
+
+	var asyncDB AsyncDB
+	if ds.a != nil {
+		asyncDB, err = ds.a.GetAsyncDB(settings, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
 	key := defaultKey(getDatasourceUID(settings))
-	ds.storeDBConnection(key, dbConnection{db, settings})
+	ds.storeDBConnection(key, dbConnection{db, asyncDB, settings})
 
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
@@ -97,6 +107,13 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 func NewDatasource(c Driver) *sqldatasource {
 	return &sqldatasource{
 		c: c,
+	}
+}
+
+func NewAsyncDatasource(c Driver, a AsyncDBGetter) *sqldatasource {
+	return &sqldatasource{
+		c: c,
+		a: a,
 	}
 }
 
@@ -135,14 +152,14 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
-		return "", dbConnection{}, MissingMultipleConnectionsConfig
+		return "", dbConnection{}, ErrorMissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
 	key := defaultKey(datasourceUID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return "", dbConnection{}, MissingDBConnection
+		return "", dbConnection{}, ErrorMissingDBConnection
 	}
 	if !ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
 		return key, dbConn, nil
@@ -155,11 +172,21 @@ func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 
 	var err error
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+
 	if err != nil {
 		return "", dbConnection{}, err
 	}
+
+	var asyncDB AsyncDB
+	if ds.a != nil {
+		asyncDB, err = ds.a.GetAsyncDB(dbConn.settings, nil)
+		if err != nil {
+			return "", dbConnection{}, err
+		}
+	}
+
 	// Assign this connection in the cache
-	dbConn = dbConnection{db, dbConn.settings}
+	dbConn = dbConnection{db, asyncDB, dbConn.settings}
 	ds.storeDBConnection(key, dbConn)
 
 	return key, dbConn, nil
@@ -218,7 +245,16 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		if err != nil {
 			return nil, err
 		}
-		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
+
+		var asyncDB AsyncDB
+		if ds.a != nil {
+			asyncDB, err = ds.a.GetAsyncDB(dbConn.settings, nil)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		ds.storeDBConnection(cacheKey, dbConnection{db, asyncDB, dbConn.settings})
 
 		return query(ctx, db, ds.c.Converters(), fillMode, q)
 	}
@@ -231,7 +267,7 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return nil, MissingDBConnection
+		return nil, ErrorMissingDBConnection
 	}
 	if err := dbConn.db.Ping(); err != nil {
 		return &backend.CheckHealthResult{

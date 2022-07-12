@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"time"
 
@@ -14,6 +15,18 @@ import (
 type DriverSettings struct {
 	Timeout  time.Duration
 	FillMode *data.FillMissing
+}
+
+type AsyncDB interface {
+	StartQuery(ctx context.Context, query string, args ...interface{}) (string, error)
+	GetQueryID(ctx context.Context, query string, args ...interface{}) (bool, string, error)
+	QueryStatus(ctx context.Context, queryID string) (bool, string, error)
+	CancelQuery(ctx context.Context, queryID string) error
+	GetRows(ctx context.Context, queryID string) (driver.Rows, error)
+}
+
+type AsyncDBGetter interface {
+	GetAsyncDB(backend.DataSourceInstanceSettings, json.RawMessage) (AsyncDB, error)
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
