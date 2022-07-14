@@ -41,7 +41,7 @@ type sqldatasource struct {
 
 	dbConnections  sync.Map
 	c              Driver
-	a              AsyncDBGetter
+	asyncDriver    AsyncDriver
 	driverSettings DriverSettings
 
 	backend.CallResourceHandler
@@ -82,8 +82,8 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	}
 
 	var asyncDB AsyncDB
-	if ds.a != nil {
-		asyncDB, err = ds.a.GetAsyncDB(settings, nil)
+	if ds.asyncDriver != nil {
+		asyncDB, err = ds.asyncDriver.ConnectAsync(settings, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -110,10 +110,9 @@ func NewDatasource(c Driver) *sqldatasource {
 	}
 }
 
-func NewAsyncDatasource(c Driver, a AsyncDBGetter) *sqldatasource {
+func NewAsyncDatasource(driver AsyncDriver) *sqldatasource {
 	return &sqldatasource{
-		c: c,
-		a: a,
+		asyncDriver: driver,
 	}
 }
 
@@ -246,15 +245,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 			return nil, err
 		}
 
-		var asyncDB AsyncDB
-		if ds.a != nil {
-			asyncDB, err = ds.a.GetAsyncDB(dbConn.settings, nil)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		ds.storeDBConnection(cacheKey, dbConnection{db, asyncDB, dbConn.settings})
+		ds.storeDBConnection(cacheKey, dbConnection{db: db, asyncDB: nil, settings: dbConn.settings})
 
 		return query(ctx, db, ds.c.Converters(), fillMode, q)
 	}

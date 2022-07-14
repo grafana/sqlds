@@ -25,10 +25,6 @@ type AsyncDB interface {
 	GetRows(ctx context.Context, queryID string) (driver.Rows, error)
 }
 
-type AsyncDBGetter interface {
-	GetAsyncDB(backend.DataSourceInstanceSettings, json.RawMessage) (AsyncDB, error)
-}
-
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
 // Plugin creators will need to implement this in order to create a managed datasource
 type Driver interface {
@@ -38,6 +34,11 @@ type Driver interface {
 	Settings(backend.DataSourceInstanceSettings) DriverSettings
 	Macros() Macros
 	Converters() []sqlutil.Converter
+}
+
+type AsyncDriver interface {
+	Driver
+	ConnectAsync(backend.DataSourceInstanceSettings, json.RawMessage) (AsyncDB, error)
 }
 
 // Connection represents a SQL connection and is satisfied by the *sql.DB type
