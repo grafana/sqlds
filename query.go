@@ -104,14 +104,14 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 
 func startQuery(ctx context.Context, db AsyncDB, query *Query) (string, error) {
 	if db == nil {
-		return "", fmt.Errorf("Async handler not defined")
+		return "", fmt.Errorf("async handler not defined")
 	}
 	return db.StartQuery(ctx, query.RawSQL)
 }
 
 func queryStatus(ctx context.Context, db AsyncDB, query *Query) (bool, string, error) {
 	if db == nil {
-		return false, "", fmt.Errorf("Async handler not defined")
+		return false, "", fmt.Errorf("async handler not defined")
 	}
 	return db.QueryStatus(ctx, query.QueryID)
 }

@@ -112,7 +112,6 @@ func (ds *sqldatasource) cancelQuery(rw http.ResponseWriter, req *http.Request) 
 		}
 		if dbConn.asyncDB != nil {
 			err := dbConn.asyncDB.CancelQuery(ctx, options["queryId"])
-			ds.cache.Delete(options["queryId"])
 			if err != nil {
 				handleError(rw, err)
 				return

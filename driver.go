@@ -31,6 +31,7 @@ type Driver interface {
 type AsyncDB interface {
 	// Async flow
 	StartQuery(ctx context.Context, query string, args ...interface{}) (string, error)
+	GetQueryID(ctx context.Context, query string, args ...interface{}) (bool, string, error)
 	QueryStatus(ctx context.Context, queryID string) (bool, string, error)
 	CancelQuery(ctx context.Context, queryID string) error
 	GetRows(ctx context.Context, queryID string) (driver.Rows, error)
