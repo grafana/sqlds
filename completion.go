@@ -100,28 +100,29 @@ func (ds *sqldatasource) cancelQuery(rw http.ResponseWriter, req *http.Request) 
 		handleError(rw, fmt.Errorf("missing queryId in request"))
 		return
 	}
+
 	ctx := req.Context()
 	plugin := httpadapter.PluginConfigFromContext(ctx)
-	if plugin.DataSourceInstanceSettings != nil {
-		datasourceUID := getDatasourceUID(*plugin.DataSourceInstanceSettings)
-		// TODO: Add connectionArgs support?
-		_, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, nil)
-		if err != nil {
-			handleError(rw, err)
-			return
-		}
-		if dbConn.asyncDB != nil {
-			err := dbConn.asyncDB.CancelQuery(ctx, options["queryId"])
-			if err != nil {
-				handleError(rw, err)
-				return
-			}
-		} else {
-			handleError(rw, fmt.Errorf("unable to retrieve async DB connection"))
-			return
-		}
-	} else {
+	if plugin.DataSourceInstanceSettings == nil {
 		handleError(rw, fmt.Errorf("unable to get plugin ID from context"))
+		return
+	}
+
+	datasourceUID := getDatasourceUID(*plugin.DataSourceInstanceSettings)
+	// TODO: Add connectionArgs support?
+	_, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, nil)
+	if err != nil {
+		handleError(rw, err)
+		return
+	}
+	if dbConn.asyncDB == nil {
+		handleError(rw, fmt.Errorf("unable to retrieve async DB connection"))
+		return
+	}
+
+	err = dbConn.asyncDB.CancelQuery(ctx, options["queryId"])
+	if err != nil {
+		handleError(rw, err)
 		return
 	}
 }

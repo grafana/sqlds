@@ -17,6 +17,44 @@ type DriverSettings struct {
 	FillMode *data.FillMissing
 }
 
+type QueryStatus uint32
+
+const (
+	QueryUnknown QueryStatus = iota
+	QuerySubmitted
+	QueryRunning
+	QueryFinished
+	QueryCanceled
+	QueryFailed
+)
+
+func (qs QueryStatus) Finished() bool {
+	return qs == QueryCanceled || qs == QueryFailed || qs == QueryFinished
+}
+
+func (qs QueryStatus) String() string {
+	switch qs {
+	case QuerySubmitted:
+		return "submitted"
+	case QueryRunning:
+		return "running"
+	case QueryFinished:
+		return "finished"
+	case QueryCanceled:
+		return "canceled"
+	case QueryFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+type ExecuteQueryStatus struct {
+	ID       string
+	Finished bool
+	State    string
+}
+
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
 // Plugin creators will need to implement this in order to create a managed datasource
 type Driver interface {
@@ -29,17 +67,16 @@ type Driver interface {
 }
 
 type AsyncDB interface {
+	// DB generic methods
+	driver.Conn
+	Ping(ctx context.Context) error
+
 	// Async flow
 	StartQuery(ctx context.Context, query string, args ...interface{}) (string, error)
 	GetQueryID(ctx context.Context, query string, args ...interface{}) (bool, string, error)
-	QueryStatus(ctx context.Context, queryID string) (bool, string, error)
+	QueryStatus(ctx context.Context, queryID string) (QueryStatus, error)
 	CancelQuery(ctx context.Context, queryID string) error
 	GetRows(ctx context.Context, queryID string) (driver.Rows, error)
-	// DB generic methods
-	Ping(ctx context.Context) error
-	Begin() (driver.Tx, error)
-	Prepare(query string) (driver.Stmt, error)
-	Close() error
 }
 
 type AsyncDBGetter interface {
