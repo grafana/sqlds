@@ -109,8 +109,12 @@ func (ds *sqldatasource) cancelQuery(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	datasourceUID := getDatasourceUID(*plugin.DataSourceInstanceSettings)
-	// TODO: Add connectionArgs support?
-	_, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, nil)
+	connectionArgs := options["connectionArgs"]
+	var connArgs json.RawMessage = nil
+	if connectionArgs != "" {
+		connArgs = []byte(connectionArgs)
+	}
+	_, dbConn, err := ds.getDBConnectionFromConnArgs(datasourceUID, connArgs)
 	if err != nil {
 		handleError(rw, err)
 		return

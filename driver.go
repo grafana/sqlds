@@ -49,12 +49,6 @@ func (qs QueryStatus) String() string {
 	}
 }
 
-type ExecuteQueryStatus struct {
-	ID       string
-	Finished bool
-	State    string
-}
-
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
 // Plugin creators will need to implement this in order to create a managed datasource
 type Driver interface {

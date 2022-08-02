@@ -256,17 +256,22 @@ func (ds *sqldatasource) handleAsyncQuery(ctx context.Context, req backend.DataQ
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
+	customMeta := queryMeta{QueryID: q.QueryID, Status: status.String()}
 	if !status.Finished() {
 		return data.Frames{
 			{Meta: &data.FrameMeta{
 				ExecutedQueryString: q.RawSQL,
-				Custom:              queryMeta{QueryID: q.QueryID, Status: status.String()}},
+				Custom:              customMeta},
 			},
 		}, nil
 	}
 
 	res, err := queryAsync(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
 	if err == nil || errors.Is(err, ErrorNoResults) {
+		if len(res) == 0 {
+			res = append(res, &data.Frame{})
+		}
+		res[0].Meta.Custom = customMeta
 		return res, nil
 	}
 
@@ -291,7 +296,14 @@ func (ds *sqldatasource) handleAsyncQuery(ctx context.Context, req backend.DataQ
 	// Assign this connection in the cache
 	dbConn = dbConnection{db: db, asyncDB: asyncDB, settings: dbConn.settings}
 	ds.storeDBConnection(cacheKey, dbConn)
-	return queryAsync(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
+	res, err = queryAsync(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
+	if err == nil || errors.Is(err, ErrorNoResults) {
+		if len(res) == 0 {
+			res = append(res, &data.Frame{})
+		}
+		res[0].Meta.Custom = customMeta
+	}
+	return res, err
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
