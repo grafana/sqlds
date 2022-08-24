@@ -83,16 +83,16 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
 		ds := &sqldatasource{c: d, EnableMultipleConnections: false}
 		_, _, err := ds.getDBConnectionFromConnArgs("dsUID", json.RawMessage("foo"))
-		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
-			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
+		if err == nil || !errors.Is(err, ErrorMissingMultipleConnectionsConfig) {
+			t.Errorf("expecting error: %v", ErrorMissingMultipleConnectionsConfig)
 		}
 	})
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
 		ds := &sqldatasource{c: d}
 		_, _, err := ds.getDBConnectionFromConnArgs("dsUID", json.RawMessage{})
-		if err == nil || !errors.Is(err, MissingDBConnection) {
-			t.Errorf("expecting error: %v", MissingDBConnection)
+		if err == nil || !errors.Is(err, ErrorMissingDBConnection) {
+			t.Errorf("expecting error: %v", ErrorMissingDBConnection)
 		}
 	})
 }

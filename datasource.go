@@ -18,8 +18,8 @@ import (
 const defaultKeySuffix = "default"
 
 var (
-	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
-	MissingDBConnection              = errors.New("unable to get default db connection")
+	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
+	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
 )
 
 func defaultKey(datasourceUID string) string {
@@ -166,14 +166,14 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 func (ds *sqldatasource) getDBConnectionFromConnArgs(datasourceUID string, connArgs json.RawMessage) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(connArgs) > 0 {
-		return "", dbConnection{}, MissingMultipleConnectionsConfig
+		return "", dbConnection{}, ErrorMissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
 	key := defaultKey(datasourceUID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return "", dbConnection{}, MissingDBConnection
+		return "", dbConnection{}, ErrorMissingDBConnection
 	}
 	if !ds.EnableMultipleConnections || len(connArgs) == 0 {
 		return key, dbConn, nil
@@ -372,7 +372,7 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return nil, MissingDBConnection
+		return nil, ErrorMissingDBConnection
 	}
 	if err := dbConn.db.Ping(); err != nil {
 		return &backend.CheckHealthResult{
