@@ -106,6 +106,12 @@ func startQuery(ctx context.Context, db AsyncDB, query *Query) (string, error) {
 	if db == nil {
 		return "", fmt.Errorf("async handler not defined")
 	}
+
+	found, queryID, err := db.GetQueryID(ctx, query.RawSQL)
+	if found || err != nil {
+		return queryID, err
+	}
+
 	return db.StartQuery(ctx, query.RawSQL)
 }
 
