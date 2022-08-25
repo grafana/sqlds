@@ -41,7 +41,7 @@ type sqldatasource struct {
 
 	dbConnections  sync.Map
 	c              Driver
-	asyncDBGetter  AsyncDBGetter
+	asyncDriver    AsyncDriver
 	driverSettings DriverSettings
 
 	backend.CallResourceHandler
@@ -82,8 +82,8 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	}
 
 	var asyncDB AsyncDB
-	if ds.asyncDBGetter != nil {
-		asyncDB, err = ds.asyncDBGetter.GetAsyncDB(settings, nil)
+	if ds.asyncDriver != nil {
+		asyncDB, err = ds.asyncDriver.GetAsyncDB(settings, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -112,10 +112,10 @@ func NewDatasource(c Driver) *sqldatasource {
 }
 
 // NewAsyncDatasource initializes the Datasource wrapper and instance manager
-func NewAsyncDatasource(c Driver, a AsyncDBGetter) *sqldatasource {
+func NewAsyncDatasource(a AsyncDriver) *sqldatasource {
 	return &sqldatasource{
-		c:             c,
-		asyncDBGetter: a,
+		c:           a,
+		asyncDriver: a,
 	}
 }
 
@@ -144,7 +144,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 			var frames data.Frames
 			var err error
 			_, isFromAlert := req.Headers["FromAlert"]
-			if ds.asyncDBGetter != nil && !isFromAlert {
+			if ds.asyncDriver != nil && !isFromAlert {
 				frames, err = ds.handleAsyncQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 			} else {
 				frames, err = ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
@@ -190,8 +190,8 @@ func (ds *sqldatasource) getDBConnectionFromConnArgs(datasourceUID string, connA
 	}
 
 	var asyncDB AsyncDB
-	if ds.asyncDBGetter != nil {
-		asyncDB, err = ds.asyncDBGetter.GetAsyncDB(dbConn.settings, connArgs)
+	if ds.asyncDriver != nil {
+		asyncDB, err = ds.asyncDriver.GetAsyncDB(dbConn.settings, connArgs)
 		if err != nil {
 			return "", dbConnection{}, err
 		}
@@ -286,8 +286,8 @@ func (ds *sqldatasource) handleAsyncQuery(ctx context.Context, req backend.DataQ
 	}
 
 	var asyncDB AsyncDB
-	if ds.asyncDBGetter != nil {
-		asyncDB, err = ds.asyncDBGetter.GetAsyncDB(dbConn.settings, q.ConnectionArgs)
+	if ds.asyncDriver != nil {
+		asyncDB, err = ds.asyncDriver.GetAsyncDB(dbConn.settings, q.ConnectionArgs)
 		if err != nil {
 			return nil, err
 		}

@@ -17,6 +17,7 @@ type DriverSettings struct {
 	FillMode *data.FillMissing
 }
 
+// QueryStatus represents the status of an async query
 type QueryStatus uint32
 
 const (
@@ -60,6 +61,7 @@ type Driver interface {
 	Converters() []sqlutil.Converter
 }
 
+// AsyncDB represents an async SQL connection
 type AsyncDB interface {
 	// DB generic methods
 	driver.Conn
@@ -73,7 +75,9 @@ type AsyncDB interface {
 	GetRows(ctx context.Context, queryID string) (driver.Rows, error)
 }
 
-type AsyncDBGetter interface {
+// AsyncDriver extends the driver interface to also connect to async SQL datasources
+type AsyncDriver interface {
+	Driver
 	GetAsyncDB(backend.DataSourceInstanceSettings, json.RawMessage) (AsyncDB, error)
 }
 
