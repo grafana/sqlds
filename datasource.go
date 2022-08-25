@@ -20,6 +20,11 @@ const defaultKeySuffix = "default"
 var (
 	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
 	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
+
+	// Deprecated: ErrorMissingMultipleConnectionsConfig should be used instead
+	MissingMultipleConnectionsConfig = ErrorMissingMultipleConnectionsConfig
+	// Deprecated: ErrorMissingDBConnection should be used instead
+	MissingDBConnection = ErrorMissingDBConnection
 )
 
 func defaultKey(datasourceUID string) string {
