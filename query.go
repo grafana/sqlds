@@ -122,47 +122,14 @@ func queryStatus(ctx context.Context, db AsyncDB, query *Query) (QueryStatus, er
 	return db.QueryStatus(ctx, query.QueryID)
 }
 
-func queryAsync(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
-	// Query the rows from the database
-	rows, err := db.QueryContext(ctx, query.RawSQL, sql.NamedArg{Name: "queryID", Value: query.QueryID})
-	if err != nil {
-		errType := ErrorQuery
-		if errors.Is(err, context.Canceled) {
-			errType = context.Canceled
-		}
-
-		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", errType, err.Error())
-	}
-
-	// Check for an error response
-	if err := rows.Err(); err != nil {
-		if err == sql.ErrNoRows {
-			// Should we even response with an error here?
-			// The panel will simply show "no data"
-			return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "No results from query", err)
-		}
-		return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "Error response from database", err)
-	}
-
-	defer func() {
-		if err := rows.Close(); err != nil {
-			backend.Logger.Error(err.Error())
-		}
-	}()
-
-	// Convert the response to frames
-	res, err := getFrames(rows, -1, converters, fillMode, query)
-	if err != nil {
-		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", err, "Could not process SQL results")
-	}
-
-	return res, nil
+func queryAsync(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, q *Query) (data.Frames, error) {
+	return query(ctx, db, converters, fillMode, q, sql.NamedArg{Name: "queryID", Value: q.QueryID})
 }
 
 // query sends the query to the connection and converts the rows to a dataframe.
-func query(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+func query(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query, args ...interface{}) (data.Frames, error) {
 	// Query the rows from the database
-	rows, err := db.QueryContext(ctx, query.RawSQL)
+	rows, err := db.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
 		errType := ErrorQuery
 		if errors.Is(err, context.Canceled) {

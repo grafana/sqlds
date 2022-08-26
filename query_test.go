@@ -104,3 +104,45 @@ func TestQuery_Timeout(t *testing.T) {
 		}
 	})
 }
+
+type testAsyncDB struct {
+	queryID string
+	AsyncDB
+}
+
+func (db *testAsyncDB) StartQuery(ctx context.Context, query string, args ...interface{}) (string, error) {
+	return "new", nil
+}
+func (db *testAsyncDB) GetQueryID(ctx context.Context, query string, args ...interface{}) (bool, string, error) {
+	return db.queryID != "", db.queryID, nil
+}
+
+func Test_AsyncDB(t *testing.T) {
+	t.Run("startQuery", func(t *testing.T) {
+		testCases := map[string]struct {
+			queryID    string
+			expectedID string
+		}{
+			"queryID found": {
+				queryID:    "foo",
+				expectedID: "foo",
+			},
+			"queryID not found": {
+				queryID:    "",
+				expectedID: "new",
+			},
+		}
+		for name, testcase := range testCases {
+			t.Run(name, func(t *testing.T) {
+				db := &testAsyncDB{queryID: testcase.queryID}
+				id, err := startQuery(context.Background(), db, &Query{})
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				if id != testcase.expectedID {
+					t.Fatalf("unexpected id %s", id)
+				}
+			})
+		}
+	})
+}
