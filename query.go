@@ -25,6 +25,10 @@ const (
 	FormatOptionLogs
 )
 
+type QueryMeta struct {
+	QueryFlow string `json:"queryFlow,omitempty"`
+}
+
 // Query is the model that represents the query that users submit from the panel / queryeditor.
 // For the sake of backwards compatibility, when making changes to this type, ensure that changes are
 // only additive.
@@ -45,7 +49,8 @@ type Query struct {
 	Column string `json:"column,omitempty"`
 
 	// Async
-	QueryID string `json:"queryID,omitempty"`
+	QueryID string    `json:"queryID,omitempty"`
+	Meta    QueryMeta `json:"meta,omitempty"`
 }
 
 // WithSQL copies the Query, but with a different RawSQL value.
@@ -88,6 +93,7 @@ func GetQuery(query backend.DataQuery) (*Query, error) {
 		Table:          model.Table,
 		Column:         model.Column,
 		QueryID:        model.QueryID,
+		Meta:           model.Meta,
 	}, nil
 }
 

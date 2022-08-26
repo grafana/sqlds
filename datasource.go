@@ -148,8 +148,9 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 		go func(query backend.DataQuery) {
 			var frames data.Frames
 			var err error
+			q, _ := GetQuery(query)
 			_, isFromAlert := req.Headers["FromAlert"]
-			if ds.asyncDriver != nil && !isFromAlert {
+			if ds.asyncDriver != nil && !isFromAlert && q.Meta.QueryFlow == "async" {
 				frames, err = ds.handleAsyncQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 			} else {
 				frames, err = ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
