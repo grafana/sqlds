@@ -108,6 +108,14 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 	return frames
 }
 
+func getQueryFlow(query backend.DataQuery) string {
+	q, _ := GetQuery(query)
+	if q.Meta.QueryFlow == "async" {
+		return "async"
+	}
+	return "sync"
+}
+
 func startQuery(ctx context.Context, db AsyncDB, query *Query) (string, error) {
 	if db == nil {
 		return "", fmt.Errorf("async handler not defined")
