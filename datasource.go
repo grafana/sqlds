@@ -18,8 +18,13 @@ import (
 const defaultKeySuffix = "default"
 
 var (
-	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
-	MissingDBConnection              = errors.New("unable to get default db connection")
+	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
+	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
+
+	// Deprecated: ErrorMissingMultipleConnectionsConfig should be used instead
+	MissingMultipleConnectionsConfig = ErrorMissingMultipleConnectionsConfig
+	// Deprecated: ErrorMissingDBConnection should be used instead
+	MissingDBConnection = ErrorMissingDBConnection
 )
 
 func defaultKey(datasourceUID string) string {
@@ -202,7 +207,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	res, err := query(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
+	res, err := QueryDB(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
@@ -220,7 +225,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		}
 		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
-		return query(ctx, db, ds.c.Converters(), fillMode, q)
+		return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err
@@ -244,4 +249,8 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
 	}, nil
+}
+
+func (ds *sqldatasource) DriverSettings() DriverSettings {
+	return ds.driverSettings
 }
