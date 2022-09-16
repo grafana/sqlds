@@ -57,7 +57,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			ds := &sqldatasource{c: d, EnableMultipleConnections: true}
+			ds := &SqlDatasource{c: d, EnableMultipleConnections: true}
 			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
 			key := defaultKey(tt.dsUID)
 			// Add the mandatory default db
@@ -81,7 +81,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
-		ds := &sqldatasource{c: d, EnableMultipleConnections: false}
+		ds := &SqlDatasource{c: d, EnableMultipleConnections: false}
 		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
@@ -89,7 +89,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	})
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
-		ds := &sqldatasource{c: d}
+		ds := &SqlDatasource{c: d}
 		_, _, err := ds.getDBConnectionFromQuery(&Query{}, "dsUID")
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
@@ -99,7 +99,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 func Test_Dispose(t *testing.T) {
 	t.Run("it should not delete connections", func(t *testing.T) {
-		ds := &sqldatasource{}
+		ds := &SqlDatasource{}
 		ds.dbConnections.Store(defaultKey("uid1"), dbConnection{})
 		ds.dbConnections.Store("foo", dbConnection{})
 		ds.Dispose()

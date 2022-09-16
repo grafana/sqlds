@@ -40,7 +40,7 @@ type dbConnection struct {
 	settings backend.DataSourceInstanceSettings
 }
 
-type sqldatasource struct {
+type SqlDatasource struct {
 	Completable
 
 	dbConnections  sync.Map
@@ -55,7 +55,7 @@ type sqldatasource struct {
 	EnableMultipleConnections bool
 }
 
-func (ds *sqldatasource) getDBConnection(key string) (dbConnection, bool) {
+func (ds *SqlDatasource) getDBConnection(key string) (dbConnection, bool) {
 	conn, ok := ds.dbConnections.Load(key)
 	if !ok {
 		return dbConnection{}, false
@@ -63,7 +63,7 @@ func (ds *sqldatasource) getDBConnection(key string) (dbConnection, bool) {
 	return conn.(dbConnection), true
 }
 
-func (ds *sqldatasource) storeDBConnection(key string, dbConn dbConnection) {
+func (ds *SqlDatasource) storeDBConnection(key string, dbConn dbConnection) {
 	ds.dbConnections.Store(key, dbConn)
 }
 
@@ -76,9 +76,9 @@ func getDatasourceUID(settings backend.DataSourceInstanceSettings) string {
 	return datasourceUID
 }
 
-// NewDatasource creates a new `sqldatasource`.
+// NewDatasource creates a new `SqlDatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
-func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+func (ds *SqlDatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	db, err := ds.c.Connect(settings, nil)
 	if err != nil {
 		return nil, err
@@ -99,19 +99,19 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 }
 
 // NewDatasource initializes the Datasource wrapper and instance manager
-func NewDatasource(c Driver) *sqldatasource {
-	return &sqldatasource{
+func NewDatasource(c Driver) *SqlDatasource {
+	return &SqlDatasource{
 		c: c,
 	}
 }
 
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
-func (ds *sqldatasource) Dispose() {
+func (ds *SqlDatasource) Dispose() {
 }
 
 // QueryData creates the Responses list and executes each query
-func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+func (ds *SqlDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	var (
 		response = NewResponse(backend.NewQueryDataResponse())
 		wg       = sync.WaitGroup{}
@@ -138,7 +138,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
+func (ds *SqlDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
@@ -171,7 +171,7 @@ func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
+func (ds *SqlDatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
 	// Convert the backend.DataQuery into a Query object
 	q, err := GetQuery(req)
 	if err != nil {
@@ -232,7 +232,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 }
 
 // CheckHealth pings the connected SQL database
-func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+func (ds *SqlDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
@@ -251,6 +251,6 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	}, nil
 }
 
-func (ds *sqldatasource) DriverSettings() DriverSettings {
+func (ds *SqlDatasource) DriverSettings() DriverSettings {
 	return ds.driverSettings
 }
