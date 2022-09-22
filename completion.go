@@ -49,7 +49,7 @@ func sendResourceResponse(rw http.ResponseWriter, res []string) {
 	}
 }
 
-func (ds *SqlDatasource) getResources(rtype string) func(rw http.ResponseWriter, req *http.Request) {
+func (ds *SQLDatasource) getResources(rtype string) func(rw http.ResponseWriter, req *http.Request) {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		if ds.Completable == nil {
 			handleError(rw, ErrorNotImplemented)
@@ -86,7 +86,7 @@ func (ds *SqlDatasource) getResources(rtype string) func(rw http.ResponseWriter,
 	}
 }
 
-func (ds *SqlDatasource) registerRoutes(mux *http.ServeMux) error {
+func (ds *SQLDatasource) registerRoutes(mux *http.ServeMux) error {
 	defaultRoutes := map[string]func(http.ResponseWriter, *http.Request){
 		"/tables":  ds.getResources(tables),
 		"/schemas": ds.getResources(schemas),
