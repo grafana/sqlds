@@ -106,7 +106,7 @@ func TestCompletable(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			w := httptest.NewRecorder()
 
-			sqlds := &sqldatasource{}
+			sqlds := &SQLDatasource{}
 			sqlds.Completable = test.fakeImpl
 
 			b := ioutil.NopCloser(bytes.NewReader([]byte(test.reqBody)))
@@ -129,7 +129,7 @@ func TestCompletable(t *testing.T) {
 
 func Test_registerRoutes(t *testing.T) {
 	t.Run("it should add a new route", func(t *testing.T) {
-		sqlds := &sqldatasource{}
+		sqlds := &SQLDatasource{}
 		sqlds.CustomRoutes = map[string]func(http.ResponseWriter, *http.Request){
 			"/foo": func(w http.ResponseWriter, r *http.Request) {
 				_, err := w.Write([]byte("bar"))
@@ -161,7 +161,7 @@ func Test_registerRoutes(t *testing.T) {
 	})
 
 	t.Run("it error if tried to add an existing route", func(t *testing.T) {
-		sqlds := &sqldatasource{}
+		sqlds := &SQLDatasource{}
 		sqlds.CustomRoutes = map[string]func(http.ResponseWriter, *http.Request){
 			"/tables": func(w http.ResponseWriter, r *http.Request) {},
 		}

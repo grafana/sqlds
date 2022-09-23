@@ -18,8 +18,13 @@ import (
 const defaultKeySuffix = "default"
 
 var (
-	MissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
-	MissingDBConnection              = errors.New("unable to get default db connection")
+	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
+	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
+
+	// Deprecated: ErrorMissingMultipleConnectionsConfig should be used instead
+	MissingMultipleConnectionsConfig = ErrorMissingMultipleConnectionsConfig
+	// Deprecated: ErrorMissingDBConnection should be used instead
+	MissingDBConnection = ErrorMissingDBConnection
 )
 
 func defaultKey(datasourceUID string) string {
@@ -35,7 +40,7 @@ type dbConnection struct {
 	settings backend.DataSourceInstanceSettings
 }
 
-type sqldatasource struct {
+type SQLDatasource struct {
 	Completable
 
 	dbConnections  sync.Map
@@ -50,7 +55,7 @@ type sqldatasource struct {
 	EnableMultipleConnections bool
 }
 
-func (ds *sqldatasource) getDBConnection(key string) (dbConnection, bool) {
+func (ds *SQLDatasource) getDBConnection(key string) (dbConnection, bool) {
 	conn, ok := ds.dbConnections.Load(key)
 	if !ok {
 		return dbConnection{}, false
@@ -58,7 +63,7 @@ func (ds *sqldatasource) getDBConnection(key string) (dbConnection, bool) {
 	return conn.(dbConnection), true
 }
 
-func (ds *sqldatasource) storeDBConnection(key string, dbConn dbConnection) {
+func (ds *SQLDatasource) storeDBConnection(key string, dbConn dbConnection) {
 	ds.dbConnections.Store(key, dbConn)
 }
 
@@ -71,9 +76,9 @@ func getDatasourceUID(settings backend.DataSourceInstanceSettings) string {
 	return datasourceUID
 }
 
-// NewDatasource creates a new `sqldatasource`.
+// NewDatasource creates a new `SQLDatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
-func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	db, err := ds.c.Connect(settings, nil)
 	if err != nil {
 		return nil, err
@@ -94,19 +99,19 @@ func (ds *sqldatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 }
 
 // NewDatasource initializes the Datasource wrapper and instance manager
-func NewDatasource(c Driver) *sqldatasource {
-	return &sqldatasource{
+func NewDatasource(c Driver) *SQLDatasource {
+	return &SQLDatasource{
 		c: c,
 	}
 }
 
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
-func (ds *sqldatasource) Dispose() {
+func (ds *SQLDatasource) Dispose() {
 }
 
 // QueryData creates the Responses list and executes each query
-func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	var (
 		response = NewResponse(backend.NewQueryDataResponse())
 		wg       = sync.WaitGroup{}
@@ -133,7 +138,7 @@ func (ds *sqldatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
+func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
@@ -166,7 +171,7 @@ func (ds *sqldatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
+func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
 	// Convert the backend.DataQuery into a Query object
 	q, err := GetQuery(req)
 	if err != nil {
@@ -202,7 +207,7 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	res, err := query(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
+	res, err := QueryDB(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
@@ -220,14 +225,14 @@ func (ds *sqldatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		}
 		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
-		return query(ctx, db, ds.c.Converters(), fillMode, q)
+		return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
 	}
 
 	return nil, err
 }
 
 // CheckHealth pings the connected SQL database
-func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
@@ -244,4 +249,8 @@ func (ds *sqldatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
 	}, nil
+}
+
+func (ds *SQLDatasource) DriverSettings() DriverSettings {
+	return ds.driverSettings
 }

@@ -97,10 +97,10 @@ func getErrorFrameFromQuery(query *Query) data.Frames {
 	return frames
 }
 
-// query sends the query to the connection and converts the rows to a dataframe.
-func query(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+// QueryDB sends the query to the connection and converts the rows to a dataframe.
+func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query, args ...interface{}) (data.Frames, error) {
 	// Query the rows from the database
-	rows, err := db.QueryContext(ctx, query.RawSQL)
+	rows, err := db.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
 		errType := ErrorQuery
 		if errors.Is(err, context.Canceled) {
