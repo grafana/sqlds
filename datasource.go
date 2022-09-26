@@ -138,6 +138,11 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
+func (ds *SQLDatasource) GetDBFromQuery(q *Query, datasourceUID string) (*sql.DB, error) {
+	_, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+	return dbConn.db, err
+}
+
 func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
