@@ -138,36 +138,41 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *SQLDatasource) GetDBConnectionFromQuery(q *Query, datasourceUID string) (string, *sql.DB, *backend.DataSourceInstanceSettings, error) {
+func (ds *SQLDatasource) GetDBFromQuery(q *Query, datasourceUID string) (*sql.DB, error) {
+	_, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+	return dbConn.db, err
+}
+
+func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
-		return "", nil, nil, MissingMultipleConnectionsConfig
+		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
 	key := defaultKey(datasourceUID)
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return "", nil, nil, MissingDBConnection
+		return "", dbConnection{}, MissingDBConnection
 	}
 	if !ds.EnableMultipleConnections || len(q.ConnectionArgs) == 0 {
-		return key, dbConn.db, &dbConn.settings, nil
+		return key, dbConn, nil
 	}
 
 	key = keyWithConnectionArgs(datasourceUID, q.ConnectionArgs)
 	if cachedConn, ok := ds.getDBConnection(key); ok {
-		return key, cachedConn.db, &cachedConn.settings, nil
+		return key, cachedConn, nil
 	}
 
 	var err error
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return "", nil, nil, err
+		return "", dbConnection{}, err
 	}
 	// Assign this connection in the cache
 	dbConn = dbConnection{db, dbConn.settings}
 	ds.storeDBConnection(key, dbConn)
 
-	return key, dbConn.db, &dbConn.settings, nil
+	return key, dbConn, nil
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
@@ -191,7 +196,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Retrieve the database connection
-	cacheKey, db, settings, err := ds.GetDBConnectionFromQuery(q, datasourceUID)
+	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
@@ -207,7 +212,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	res, err := QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+	res, err := QueryDB(ctx, dbConn.db, ds.c.Converters(), fillMode, q)
 	if err == nil {
 		return res, nil
 	}
@@ -219,11 +224,11 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// If there's a query error that didn't exceed the
 	// context deadline retry the query
 	if errors.Is(err, ErrorQuery) && !errors.Is(err, context.DeadlineExceeded) {
-		db, err := ds.c.Connect(*settings, q.ConnectionArgs)
+		db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 		if err != nil {
 			return nil, err
 		}
-		ds.storeDBConnection(cacheKey, dbConnection{db, *settings})
+		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
 		return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
 	}

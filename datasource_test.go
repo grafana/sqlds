@@ -67,22 +67,22 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 				ds.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
-			key, db, _, err := ds.GetDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
+			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
 			if key != tt.expectedKey {
 				t.Fatalf("unexpected cache key %s", key)
 			}
-			if db != tt.expectedDB {
-				t.Fatalf("unexpected result %v", db)
+			if dbConn.db != tt.expectedDB {
+				t.Fatalf("unexpected result %v", dbConn.db)
 			}
 		})
 	}
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
 		ds := &SQLDatasource{c: d, EnableMultipleConnections: false}
-		_, _, _, err := ds.GetDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
 		}
@@ -90,7 +90,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
 		ds := &SQLDatasource{c: d}
-		_, _, _, err := ds.GetDBConnectionFromQuery(&Query{}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(&Query{}, "dsUID")
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
 		}
