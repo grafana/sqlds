@@ -43,7 +43,6 @@ func (h *SQLMock) Connect(config backend.DataSourceInstanceSettings, msg json.Ra
 		backend.Logger.Error("failed creating mock data: " + err.Error())
 		return nil, err
 	}
-	backend.Logger.Debug("connecting to Hana Mock")
 	ex, err := os.Executable()
 	if err != nil {
 		backend.Logger.Error("failed accessing Mock path: " + err.Error())
