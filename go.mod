@@ -3,11 +3,11 @@ module github.com/grafana/sqlds/v2
 go 1.15
 
 require (
+	github.com/go-kit/kit v0.10.0 // indirect
 	github.com/go-sql-driver/mysql v1.4.0
-	github.com/google/go-cmp v0.5.6
-	github.com/grafana/grafana-plugin-sdk-go v0.94.0
-	github.com/stretchr/testify v1.7.0
-	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
-	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
-	golang.org/x/text v0.3.6 // indirect
+	github.com/google/go-cmp v0.5.7
+	github.com/grafana/grafana-plugin-sdk-go v0.140.0
+	github.com/mithrandie/csvq-driver v1.6.8
+	github.com/stretchr/testify v1.8.0
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc v0.0.0-20200910201057-6591123024b3 // indirect
 )
