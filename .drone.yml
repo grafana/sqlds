@@ -18,11 +18,11 @@ services:
 
 steps:
   - name: "test"
-    image: golang:1.16
+    image: golang:1.18
     commands:
       - go test ./...
   - name: "integraiton_tests"
-    image: golang:1.16
+    image: golang:1.18
     environment:
       INTEGRATION_TESTS: "true"
       MYSQL_URL: "mysql:mysql@tcp(mysql:3306)/mysql"
