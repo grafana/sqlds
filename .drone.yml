@@ -18,11 +18,11 @@ services:
 
 steps:
   - name: "test"
-    image: golang:1.16
+    image: golang:1.19
     commands:
       - go test ./...
   - name: "integraiton_tests"
-    image: golang:1.16
+    image: golang:1.19
     environment:
       INTEGRATION_TESTS: "true"
       MYSQL_URL: "mysql:mysql@tcp(mysql:3306)/mysql"
@@ -31,6 +31,6 @@ steps:
 
 ---
 kind: signature
-hmac: c4bfaa226ef0065a9fdd8b1f460c2e5cd638a6248c4167fdbbee447e30504d02
+hmac: d47f380c64ff9e498c69d2553d1d3a0751671f73e11d83866590fc4485211641
 
 ...
