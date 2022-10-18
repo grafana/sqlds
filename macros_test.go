@@ -56,11 +56,14 @@ func TestInterpolate(t *testing.T) {
 		{input: "select * from $__foo", output: "select * from bar", name: "macro without paranthesis"},
 		{input: "select * from $__params()", output: "select * from bar", name: "macro without params"},
 		{input: "select * from $__params(hello)", output: "select * from bar_hello", name: "with param"},
+		{input: "select * from $__params(h)", output: "select * from bar_h", name: "with short param"},
 		{input: "select * from $__params(hello) AND $__params(hello)", output: "select * from bar_hello AND bar_hello", name: "same macro multiple times with same param"},
+		{input: "(select * from $__params(hello) AND $__params(hello))", output: "(select * from bar_hello AND bar_hello)", name: "same macro multiple times with same param and additional parentheses"},
 		{input: "select * from $__params(hello) AND $__params(world)", output: "select * from bar_hello AND bar_world", name: "same macro multiple times with different param"},
 		{input: "select * from $__params(world) AND $__foo() AND $__params(hello)", output: "select * from bar_world AND bar AND bar_hello", name: "different macros with different params"},
 		{input: "select * from foo where $__timeFilter(time)", output: "select * from foo where time >= '0001-01-01T00:00:00Z' AND time <= '0001-01-01T00:00:00Z'", name: "default timeFilter"},
 		{input: "select * from foo where $__timeFilter(cast(sth as timestamp))", output: "select * from foo where cast(sth as timestamp) >= '0001-01-01T00:00:00Z' AND cast(sth as timestamp) <= '0001-01-01T00:00:00Z'", name: "default timeFilter"},
+		{input: "select * from foo where $__timeFilter(cast(sth as timestamp) )", output: "select * from foo where cast(sth as timestamp) >= '0001-01-01T00:00:00Z' AND cast(sth as timestamp) <= '0001-01-01T00:00:00Z'", name: "default timeFilter with empty spaces"},
 		{input: "select * from foo where $__timeTo(time)", output: "select * from foo where time <= '0001-01-01T00:00:00Z'", name: "default timeTo macro"},
 		{input: "select * from foo where $__timeFrom(time)", output: "select * from foo where time >= '0001-01-01T00:00:00Z'", name: "default timeFrom macro"},
 		{input: "select * from foo where $__timeFrom(cast(sth as timestamp))", output: "select * from foo where cast(sth as timestamp) >= '0001-01-01T00:00:00Z'", name: "default timeFrom macro"},
@@ -80,10 +83,6 @@ func TestInterpolate(t *testing.T) {
 			assert.Equal(t, tc.output, interpolatedQuery)
 		})
 	}
-}
-
-func TestGetMacroRegex_returns_composed_regular_expression(t *testing.T) {
-	assert.Equal(t, `\$__some_string\b(?:\((.*?\)?)\))?`, getMacroRegex("some_string"))
 }
 
 func TestGetMatches(t *testing.T) {
