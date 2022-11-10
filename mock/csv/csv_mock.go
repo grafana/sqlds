@@ -1,4 +1,4 @@
-package mock
+package csv
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	ds "github.com/grafana/sqlds/v2"
+	"github.com/grafana/sqlds/v2"
 	_ "github.com/mithrandie/csvq-driver"
 )
 
@@ -22,8 +22,8 @@ type SQLCSVMock struct {
 	folder string
 }
 
-func (h *SQLCSVMock) Settings(config backend.DataSourceInstanceSettings) ds.DriverSettings {
-	return ds.DriverSettings{
+func (h *SQLCSVMock) Settings(config backend.DataSourceInstanceSettings) sqlds.DriverSettings {
+	return sqlds.DriverSettings{
 		FillMode: &data.FillMissing{
 			Mode: data.FillModeNull,
 		},
@@ -91,6 +91,6 @@ func (h *SQLCSVMock) Converters() []sqlutil.Converter {
 }
 
 // Macros returns list of macro functions convert the macros of raw query
-func (h *SQLCSVMock) Macros() ds.Macros {
-	return ds.Macros{}
+func (h *SQLCSVMock) Macros() sqlds.Macros {
+	return sqlds.Macros{}
 }

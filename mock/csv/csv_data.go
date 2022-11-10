@@ -1,4 +1,4 @@
-package mock
+package csv
 
 import (
 	"errors"
