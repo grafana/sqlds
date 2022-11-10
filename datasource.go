@@ -259,42 +259,43 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	}
 
 	if ds.driverSettings.Retries == 0 {
-		if err := ds.ping(dbConn); err != nil {
-			return &backend.CheckHealthResult{
-				Status:  backend.HealthStatusError,
-				Message: err.Error(),
-			}, nil
-		}
-
-		return &backend.CheckHealthResult{
-			Status:  backend.HealthStatusOk,
-			Message: "Data source is working",
-		}, nil
+		return ds.check(dbConn)
 	}
 
+	return ds.checkWithRetries(dbConn)
+}
+
+func (ds *SQLDatasource) DriverSettings() DriverSettings {
+	return ds.driverSettings
+}
+
+func (ds *SQLDatasource) checkWithRetries(conn dbConnection) (*backend.CheckHealthResult, error) {
+	var result *backend.CheckHealthResult
 	var err error
+
 	for i := 0; i < ds.driverSettings.Retries; i++ {
-		err = ds.ping(dbConn)
+		result, err = ds.check(conn)
 		if err == nil {
-			break
+			return result, err
 		}
 	}
 
-	if err != nil {
+	// TODO: failed health checks don't return an error
+	return result, nil
+}
+
+func (ds *SQLDatasource) check(conn dbConnection) (*backend.CheckHealthResult, error) {
+	if err := ds.ping(conn); err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: err.Error(),
-		}, nil
+		}, err
 	}
 
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
 	}, nil
-}
-
-func (ds *SQLDatasource) DriverSettings() DriverSettings {
-	return ds.driverSettings
 }
 
 func (ds *SQLDatasource) ping(conn dbConnection) error {
