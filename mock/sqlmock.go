@@ -3,12 +3,10 @@ package mock
 import (
 	"context"
 	"database/sql/driver"
-	"time"
 )
 
 type sqlmock struct {
-	drv   *mockDriver
-	sleep int
+	drv *mockDriver
 }
 
 // Begin meets http://golang.org/pkg/database/sql/driver/#Conn interface
@@ -37,14 +35,7 @@ func (c *sqlmock) Close() error {
 }
 
 func (c *sqlmock) Ping(ctx context.Context) error {
-	// so we can test timeout retries
-	if c.sleep > 0 {
-		v := c.sleep
-		next := float64(v) * .5
-		c.sleep = int(next)
-		time.Sleep(time.Duration(v) * time.Second)
-	}
-	return nil
+	return c.drv.handler.Ping(ctx)
 }
 
 // statement
@@ -58,6 +49,9 @@ func (stmt *statement) Exec(args []driver.Value) (driver.Result, error) {
 }
 
 func (stmt *statement) Query(args []driver.Value) (driver.Rows, error) {
+	if stmt.conn.drv.handler != nil {
+		stmt.conn.drv.handler.Query(args)
+	}
 	return nil, nil
 }
 
@@ -67,4 +61,26 @@ func (stmt *statement) Close() error {
 
 func (stmt *statement) NumInput() int {
 	return -1
+}
+
+type rows struct {
+	conn *sqlmock
+}
+
+func (r rows) Columns() []string {
+	if r.conn.drv.handler != nil {
+		return r.conn.drv.handler.Columns()
+	}
+	return []string{}
+}
+
+func (r rows) Close() error {
+	return nil
+}
+
+func (r rows) Next(dest []driver.Value) error {
+	if r.conn.drv.handler != nil {
+		return r.conn.drv.handler.Next(dest)
+	}
+	return nil
 }

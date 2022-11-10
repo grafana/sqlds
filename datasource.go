@@ -233,6 +233,20 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
 	}
 
+	// allow retries on timeouts
+	if errors.Is(err, context.DeadlineExceeded) {
+		for i := 0; i < ds.driverSettings.Retries; i++ {
+			backend.Logger.Warn(fmt.Sprintf("connection timed out. retrying %d times", i))
+			db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+			if err != nil {
+				continue
+			}
+			ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
+
+			return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+		}
+	}
+
 	return nil, err
 }
 
@@ -243,7 +257,25 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	if !ok {
 		return nil, MissingDBConnection
 	}
-	if err := dbConn.db.Ping(); err != nil {
+
+	if ds.driverSettings.Retries == 0 {
+		if err := ds.ping(dbConn); err != nil {
+			return &backend.CheckHealthResult{
+				Status:  backend.HealthStatusError,
+				Message: err.Error(),
+			}, nil
+		}
+	}
+
+	var err error
+	for i := 0; i < ds.driverSettings.Retries; i++ {
+		err = ds.ping(dbConn)
+		if err != nil {
+			continue
+		}
+	}
+
+	if err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: err.Error(),
@@ -258,4 +290,15 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 
 func (ds *SQLDatasource) DriverSettings() DriverSettings {
 	return ds.driverSettings
+}
+
+func (ds *SQLDatasource) ping(conn dbConnection) error {
+	if ds.driverSettings.Timeout == 0 {
+		return conn.db.Ping()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ds.driverSettings.Timeout)
+	defer cancel()
+
+	return conn.db.PingContext(ctx)
 }

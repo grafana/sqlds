@@ -1,12 +1,17 @@
 package sqlds
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/sqlds/v2/mock"
+	"github.com/stretchr/testify/assert"
 )
 
 type fakeDriver struct {
@@ -15,9 +20,11 @@ type fakeDriver struct {
 	Driver
 }
 
-func (d *fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage) (db *sql.DB, err error) {
+func (d fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage) (db *sql.DB, err error) {
 	return d.db, nil
 }
+
+// func (d fakeDriver) Settings(backend.DataSourceInstanceSettings) DriverSettings
 
 func Test_getDBConnectionFromQuery(t *testing.T) {
 	db := &sql.DB{}
@@ -112,4 +119,57 @@ func Test_Dispose(t *testing.T) {
 			t.Errorf("missing connections")
 		}
 	})
+}
+
+func Test_retries(t *testing.T) {
+	dsUID := "timeout"
+	settings := backend.DataSourceInstanceSettings{UID: dsUID}
+
+	handler := testSqlHandler{}
+	mockDriver := "sqlmock"
+	mock.RegisterDriver(mockDriver, handler)
+	db, err := sql.Open(mockDriver, "")
+	if err != nil {
+		t.Errorf("failed to connect to mock driver: %v", err)
+	}
+	timeoutDriver := fakeDriver{
+		db: db,
+	}
+	retries := 5
+	max := time.Duration(testTimeout) * time.Second
+	driverSettings := DriverSettings{Retries: retries, Timeout: max}
+	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
+
+	key := defaultKey(dsUID)
+	// Add the mandatory default db
+	ds.storeDBConnection(key, dbConnection{db, settings})
+	ctx := context.Background()
+	req := &backend.CheckHealthRequest{
+		PluginContext: backend.PluginContext{
+			DataSourceInstanceSettings: &settings,
+		},
+	}
+	result, err := ds.CheckHealth(ctx, req)
+
+	assert.Nil(t, err)
+	assert.Equal(t, retries, testCounter)
+	expected := context.DeadlineExceeded.Error()
+	assert.Equal(t, expected, result.Message)
+}
+
+var testCounter = 0
+var testTimeout = 1
+
+type testSqlHandler struct {
+	mock.DBHandler
+}
+
+func (s testSqlHandler) Ping(ctx context.Context) error {
+	testCounter++                              // track the retries for the test assertion
+	time.Sleep(time.Duration(testTimeout + 1)) // simulate a connection delay
+	select {
+	case <-ctx.Done():
+		fmt.Println(ctx.Err())
+		return ctx.Err()
+	}
 }

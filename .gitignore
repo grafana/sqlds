@@ -3,3 +3,5 @@
 .vscode
 .idea/
 *.iml
+
+mock-data
