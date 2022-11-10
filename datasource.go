@@ -265,6 +265,11 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 				Message: err.Error(),
 			}, nil
 		}
+
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusOk,
+			Message: "Data source is working",
+		}, nil
 	}
 
 	var err error
