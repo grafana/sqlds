@@ -270,8 +270,8 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	var err error
 	for i := 0; i < ds.driverSettings.Retries; i++ {
 		err = ds.ping(dbConn)
-		if err != nil {
-			continue
+		if err == nil {
+			break
 		}
 	}
 
