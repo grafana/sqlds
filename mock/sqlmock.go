@@ -50,7 +50,7 @@ func (stmt *statement) Exec(args []driver.Value) (driver.Result, error) {
 
 func (stmt *statement) Query(args []driver.Value) (driver.Rows, error) {
 	if stmt.conn.drv.handler != nil {
-		stmt.conn.drv.handler.Query(args)
+		return stmt.conn.drv.handler.Query(args)
 	}
 	return nil, nil
 }
