@@ -169,6 +169,7 @@ func Test_timeout_retries(t *testing.T) {
 }
 
 func Test_error_retries(t *testing.T) {
+	testCounter = 0
 	dsUID := "error"
 	settings := backend.DataSourceInstanceSettings{UID: dsUID}
 
