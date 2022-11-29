@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -224,13 +225,22 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// If there's a query error that didn't exceed the
 	// context deadline retry the query
 	if errors.Is(err, ErrorQuery) && !errors.Is(err, context.DeadlineExceeded) {
-		db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
-		if err != nil {
-			return nil, err
-		}
-		ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
+		for i := 0; i < ds.driverSettings.Retries; i++ {
+			backend.Logger.Warn(fmt.Sprintf("query failed. retrying %d times", i))
+			db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+			if err != nil {
+				return nil, err
+			}
+			ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
-		return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+			if ds.driverSettings.Pause > 0 {
+				time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
+			}
+			res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+			if err == nil {
+				return res, err
+			}
+		}
 	}
 
 	// allow retries on timeouts
@@ -243,7 +253,10 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 			}
 			ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
-			return QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+			res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+			if err == nil {
+				return res, err
+			}
 		}
 	}
 

@@ -3,13 +3,16 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/grafana/sqlds/v2/mock"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,6 +25,14 @@ type fakeDriver struct {
 
 func (d fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage) (db *sql.DB, err error) {
 	return d.db, nil
+}
+
+func (d fakeDriver) Macros() Macros {
+	return Macros{}
+}
+
+func (d fakeDriver) Converters() []sqlutil.Converter {
+	return []sqlutil.Converter{}
 }
 
 // func (d fakeDriver) Settings(backend.DataSourceInstanceSettings) DriverSettings
@@ -121,7 +132,7 @@ func Test_Dispose(t *testing.T) {
 	})
 }
 
-func Test_retries(t *testing.T) {
+func Test_timeout_retries(t *testing.T) {
 	dsUID := "timeout"
 	settings := backend.DataSourceInstanceSettings{UID: dsUID}
 
@@ -157,14 +168,67 @@ func Test_retries(t *testing.T) {
 	assert.Equal(t, expected, result.Message)
 }
 
+func Test_error_retries(t *testing.T) {
+	testCounter = 0
+	dsUID := "error"
+	settings := backend.DataSourceInstanceSettings{UID: dsUID}
+
+	handler := testSqlHandler{
+		error: errors.New("foo"),
+	}
+	mockDriver := "sqlmock-error"
+	mock.RegisterDriver(mockDriver, handler)
+	db, err := sql.Open(mockDriver, "")
+	if err != nil {
+		t.Errorf("failed to connect to mock driver: %v", err)
+	}
+	timeoutDriver := fakeDriver{
+		db: db,
+	}
+	retries := 5
+	max := time.Duration(10) * time.Second
+	driverSettings := DriverSettings{Retries: retries, Timeout: max, Pause: 1}
+	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
+
+	key := defaultKey(dsUID)
+	// Add the mandatory default db
+	ds.storeDBConnection(key, dbConnection{db, settings})
+	ctx := context.Background()
+
+	qry := `{ "rawSql": "foo" }`
+
+	req := &backend.QueryDataRequest{
+		PluginContext: backend.PluginContext{
+			DataSourceInstanceSettings: &settings,
+		},
+		Queries: []backend.DataQuery{
+			{
+				RefID: "foo",
+				JSON:  []byte(qry),
+			},
+		},
+	}
+
+	data, err := ds.QueryData(ctx, req)
+	assert.Nil(t, err)
+	assert.Equal(t, retries+1, testCounter)
+	assert.NotNil(t, data.Responses)
+
+}
+
 var testCounter = 0
 var testTimeout = 1
+var testRows = 0
 
 type testSqlHandler struct {
 	mock.DBHandler
+	error
 }
 
 func (s testSqlHandler) Ping(ctx context.Context) error {
+	if s.error != nil {
+		return s.error
+	}
 	testCounter++                              // track the retries for the test assertion
 	time.Sleep(time.Duration(testTimeout + 1)) // simulate a connection delay
 	select {
@@ -172,4 +236,31 @@ func (s testSqlHandler) Ping(ctx context.Context) error {
 		fmt.Println(ctx.Err())
 		return ctx.Err()
 	}
+}
+
+func (s testSqlHandler) Query(args []driver.Value) (driver.Rows, error) {
+	fmt.Println("query")
+	if s.error != nil {
+		testCounter++
+		return s, s.error
+	}
+	return s, nil
+}
+
+func (s testSqlHandler) Columns() []string {
+	return []string{"foo", "bar"}
+}
+
+func (s testSqlHandler) Next(dest []driver.Value) error {
+	testRows++
+	if testRows > 5 {
+		return io.EOF
+	}
+	dest[0] = "foo"
+	dest[1] = "bar"
+	return nil
+}
+
+func (s testSqlHandler) Close() error {
+	return nil
 }
