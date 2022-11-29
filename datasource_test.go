@@ -175,7 +175,7 @@ func Test_error_retries(t *testing.T) {
 	handler := testSqlHandler{
 		error: errors.New("foo"),
 	}
-	mockDriver := "sqlmock"
+	mockDriver := "sqlmock-error"
 	mock.RegisterDriver(mockDriver, handler)
 	db, err := sql.Open(mockDriver, "")
 	if err != nil {
