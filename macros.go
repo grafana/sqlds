@@ -156,13 +156,15 @@ func getMacroMatches(input string, name string) ([][]string, error) {
 	for matchedIndex := 0; matchedIndex < len(matched); matchedIndex++ {
 		var macroEnd = 0
 		var argStart = 0
+		// quick exit from the loop, when we encounter a closing bracket before an opening one (ie "($__macro)", where we can skip the closing one from the result)
+		var forceBreak = false
 		macroStart := matched[matchedIndex][0]
 		inputCopy := input[macroStart:]
 		cache := make([]rune, 0)
 
 		// find the opening and closing arguments brackets
 		for idx, r := range inputCopy {
-			if len(cache) == 0 && macroEnd > 0 {
+			if len(cache) == 0 && macroEnd > 0 || forceBreak {
 				break
 			}
 			switch r {
@@ -174,6 +176,8 @@ func getMacroMatches(input string, name string) ([][]string, error) {
 			case ')':
 				l := len(cache)
 				if l == 0 {
+					macroEnd = 0
+					forceBreak = true
 					break
 				}
 				cache = cache[:l-1]
