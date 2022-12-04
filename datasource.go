@@ -263,7 +263,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 func (ds *SQLDatasource) dbReconnect(dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
 	if err := dbConn.db.Close(); err != nil {
-		backend.Logger.Warn(fmt.Sprintf("could not close existing connection: %s", err.Error()))
+		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
 	}
 
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
