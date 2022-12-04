@@ -227,11 +227,10 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	if errors.Is(err, ErrorQuery) && !errors.Is(err, context.DeadlineExceeded) {
 		for i := 0; i < ds.driverSettings.Retries; i++ {
 			backend.Logger.Warn(fmt.Sprintf("query failed. retrying %d times", i))
-			db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+			db, err := ds.dbReconnect(dbConn, q, cacheKey)
 			if err != nil {
 				return nil, err
 			}
-			ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
 			if ds.driverSettings.Pause > 0 {
 				time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
@@ -247,11 +246,10 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	if errors.Is(err, context.DeadlineExceeded) {
 		for i := 0; i < ds.driverSettings.Retries; i++ {
 			backend.Logger.Warn(fmt.Sprintf("connection timed out. retrying %d times", i))
-			db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+			db, err := ds.dbReconnect(dbConn, q, cacheKey)
 			if err != nil {
 				continue
 			}
-			ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 
 			res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
 			if err == nil {
@@ -261,6 +259,19 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	return nil, err
+}
+
+func (ds *SQLDatasource) dbReconnect(dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
+	if err := dbConn.db.Close(); err != nil {
+		backend.Logger.Warn(fmt.Sprintf("could not close existing connection: %s", err.Error()))
+	}
+
+	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+	if err != nil {
+		return nil, err
+	}
+	ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
+	return db, nil
 }
 
 // CheckHealth pings the connected SQL database
