@@ -18,13 +18,13 @@ import (
 )
 
 type fakeDriver struct {
-	db *sql.DB
+	openDBfn func() (*sql.DB, error)
 
 	Driver
 }
 
 func (d fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage) (db *sql.DB, err error) {
-	return d.db, nil
+	return d.openDBfn()
 }
 
 func (d fakeDriver) Macros() Macros {
@@ -41,7 +41,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	db := &sql.DB{}
 	db2 := &sql.DB{}
 	db3 := &sql.DB{}
-	d := &fakeDriver{db: db3}
+	d := &fakeDriver{openDBfn: func() (*sql.DB, error) { return db3, nil }}
 	tests := []struct {
 		desc        string
 		dsUID       string
@@ -144,7 +144,7 @@ func Test_timeout_retries(t *testing.T) {
 		t.Errorf("failed to connect to mock driver: %v", err)
 	}
 	timeoutDriver := fakeDriver{
-		db: db,
+		openDBfn: func() (*sql.DB, error) { return db, nil },
 	}
 	retries := 5
 	max := time.Duration(testTimeout) * time.Second
@@ -178,12 +178,15 @@ func Test_error_retries(t *testing.T) {
 	}
 	mockDriver := "sqlmock-error"
 	mock.RegisterDriver(mockDriver, handler)
-	db, err := sql.Open(mockDriver, "")
-	if err != nil {
-		t.Errorf("failed to connect to mock driver: %v", err)
-	}
+
 	timeoutDriver := fakeDriver{
-		db: db,
+		openDBfn: func() (*sql.DB, error) {
+			db, err := sql.Open(mockDriver, "")
+			if err != nil {
+				t.Errorf("failed to connect to mock driver: %v", err)
+			}
+			return db, nil
+		},
 	}
 	retries := 5
 	max := time.Duration(10) * time.Second
@@ -192,6 +195,7 @@ func Test_error_retries(t *testing.T) {
 
 	key := defaultKey(dsUID)
 	// Add the mandatory default db
+	db, _ := timeoutDriver.Connect(settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})
 	ctx := context.Background()
 
