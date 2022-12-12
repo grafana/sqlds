@@ -148,7 +148,7 @@ func Test_timeout_retries(t *testing.T) {
 	}
 	retries := 5
 	max := time.Duration(testTimeout) * time.Second
-	driverSettings := DriverSettings{Retries: retries, Timeout: max}
+	driverSettings := DriverSettings{Retries: retries, Timeout: max, RetryOn: []string{"deadline"}}
 	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
 
 	key := defaultKey(dsUID)
@@ -190,7 +190,7 @@ func Test_error_retries(t *testing.T) {
 	}
 	retries := 5
 	max := time.Duration(10) * time.Second
-	driverSettings := DriverSettings{Retries: retries, Timeout: max, Pause: 1}
+	driverSettings := DriverSettings{Retries: retries, Timeout: max, Pause: 1, RetryOn: []string{"foo"}}
 	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
 
 	key := defaultKey(dsUID)
