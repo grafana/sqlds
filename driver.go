@@ -16,6 +16,7 @@ type DriverSettings struct {
 	FillMode *data.FillMissing
 	Retries  int
 	Pause    int
+	RetryOn  []string
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
