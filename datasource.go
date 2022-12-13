@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -225,19 +226,26 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// If there's a query error that didn't exceed the
 	// context deadline retry the query
 	if errors.Is(err, ErrorQuery) && !errors.Is(err, context.DeadlineExceeded) {
-		for i := 0; i < ds.driverSettings.Retries; i++ {
-			backend.Logger.Warn(fmt.Sprintf("query failed. retrying %d times", i))
-			db, err := ds.dbReconnect(dbConn, q, cacheKey)
-			if err != nil {
-				return nil, err
-			}
+		// only retry on messages that contain specific errors
+		if shouldRetry(ds.driverSettings.RetryOn, err.Error()) {
+			for i := 0; i < ds.driverSettings.Retries; i++ {
+				backend.Logger.Warn(fmt.Sprintf("query failed: %s. Retrying %d times", err.Error(), i))
+				db, err := ds.dbReconnect(dbConn, q, cacheKey)
+				if err != nil {
+					return nil, err
+				}
 
-			if ds.driverSettings.Pause > 0 {
-				time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
-			}
-			res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
-			if err == nil {
-				return res, err
+				if ds.driverSettings.Pause > 0 {
+					time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
+				}
+				res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+				if err == nil {
+					return res, err
+				}
+				if !shouldRetry(ds.driverSettings.RetryOn, err.Error()) {
+					return res, err
+				}
+				backend.Logger.Warn(fmt.Sprintf("Retry failed: %s", err.Error()))
 			}
 		}
 	}
@@ -302,6 +310,15 @@ func (ds *SQLDatasource) checkWithRetries(conn dbConnection) (*backend.CheckHeal
 		if err == nil {
 			return result, err
 		}
+
+		if !shouldRetry(ds.driverSettings.RetryOn, err.Error()) {
+			break
+		}
+
+		if ds.driverSettings.Pause > 0 {
+			time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
+		}
+		backend.Logger.Warn(fmt.Sprintf("connect failed: %s. Retrying %d times", err.Error(), i))
 	}
 
 	// TODO: failed health checks don't return an error
@@ -331,4 +348,13 @@ func (ds *SQLDatasource) ping(conn dbConnection) error {
 	defer cancel()
 
 	return conn.db.PingContext(ctx)
+}
+
+func shouldRetry(retryOn []string, err string) bool {
+	for _, r := range retryOn {
+		if strings.Contains(err, r) {
+			return true
+		}
+	}
+	return false
 }
