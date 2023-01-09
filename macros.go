@@ -173,6 +173,12 @@ func getMacroMatches(input string, name string) ([][]string, error) {
 				if argStart == 0 {
 					argStart = idx + 1
 				}
+			case ' ':
+				// when we are inside an argument, we do not want to exit on space
+				if argStart != 0 {
+					continue
+				}
+				fallthrough
 			case ')':
 				l := len(cache)
 				if l == 0 {
