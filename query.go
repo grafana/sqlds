@@ -23,6 +23,8 @@ const (
 	FormatOptionTable
 	// FormatOptionLogs sets the preferred visualization to logs
 	FormatOptionLogs
+	// FormatOptionsTrace sets the preferred visualization to trace
+	FormatOptionTrace
 )
 
 // Query is the model that represents the query that users submit from the panel / queryeditor.
@@ -155,6 +157,11 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 
 	if query.Format == FormatOptionLogs {
 		frame.Meta.PreferredVisualization = data.VisTypeLogs
+		return data.Frames{frame}, nil
+	}
+
+	if query.Format == FormatOptionTrace {
+		frame.Meta.PreferredVisualization = data.VisTypeTrace
 		return data.Frames{frame}, nil
 	}
 
