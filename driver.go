@@ -38,3 +38,9 @@ type Connection interface {
 	PingContext(ctx context.Context) error
 	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 }
+
+// QueryMutator is an additional interface that could be implemented by driver.
+// This adds ability to the driver it can mutate query before run.
+type QueryMutator interface {
+	MutateQuery(ctx context.Context, req backend.DataQuery) (context.Context, backend.DataQuery)
+}
