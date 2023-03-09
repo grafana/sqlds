@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
+
+	"golang.org/x/exp/maps"
 )
 
 var (
@@ -21,8 +22,6 @@ type MacroFunc func(*Query, []string) (string, error)
 // Macros is a list of MacroFuncs.
 // The "string" key is the name of the macro function. This name has to be regex friendly.
 type Macros map[string]MacroFunc
-
-var thread = sync.RWMutex{}
 
 // Default time filter for SQL based on the query time range.
 // It requires one argument, the time column to filter.
@@ -217,16 +216,18 @@ func getMacroMatches(input string, name string) ([][]string, error) {
 
 // Interpolate returns an interpolated query string given a backend.DataQuery
 func Interpolate(driver Driver, query *Query) (string, error) {
-	macros := driver.Macros()
+	macros := Macros{}
+	maps.Copy(macros, driver.Macros())
+
 	for key, defaultMacro := range DefaultMacros {
 		if _, ok := macros[key]; !ok {
 			// If the driver doesn't define some macro, use the default one
-			thread.Lock()
 			macros[key] = defaultMacro
-			thread.Unlock()
 		}
 	}
 	rawSQL := query.RawSQL
+
+	maps.Copy(macros, DefaultMacros)
 
 	for key, macro := range macros {
 		matches, err := getMatches(key, rawSQL)
