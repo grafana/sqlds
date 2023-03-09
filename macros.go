@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/exp/maps"
 )
 
 var (
@@ -214,13 +216,10 @@ func getMacroMatches(input string, name string) ([][]string, error) {
 
 // Interpolate returns an interpolated query string given a backend.DataQuery
 func Interpolate(driver Driver, query *Query) (string, error) {
-	macros := driver.Macros()
-	for key, defaultMacro := range DefaultMacros {
-		if _, ok := macros[key]; !ok {
-			// If the driver doesn't define some macro, use the default one
-			macros[key] = defaultMacro
-		}
-	}
+	macros := Macros{}
+	maps.Copy(macros, DefaultMacros)
+	maps.Copy(macros, driver.Macros())
+
 	rawSQL := query.RawSQL
 
 	for key, macro := range macros {
