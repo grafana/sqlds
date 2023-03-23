@@ -44,3 +44,9 @@ type Connection interface {
 type QueryMutator interface {
 	MutateQuery(ctx context.Context, req backend.DataQuery) (context.Context, backend.DataQuery)
 }
+
+// ResponseMutator is an additional interface that could be implemented by driver.
+// This adds ability to the driver, so it can mutate a response from the driver before its returned to the client.
+type ResponseMutator interface {
+	MutateResponse(ctx context.Context, res data.Frames) (data.Frames, error)
+}

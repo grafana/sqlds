@@ -125,7 +125,11 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
 			frames, err := ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
-
+			if err == nil {
+				if responseMutator, ok := ds.c.(ResponseMutator); ok {
+					frames, err = responseMutator.MutateResponse(ctx, frames)
+				}
+			}
 			response.Set(query.RefID, backend.DataResponse{
 				Frames: frames,
 				Error:  err,
