@@ -233,7 +233,7 @@ func Test_query_apply_headers(t *testing.T) {
 	handler := &testSqlHandler{
 		error: errors.New("missing token"),
 	}
-	mockDriver := "sqlmock-error"
+	mockDriver := "sqlmock-query-error"
 	mock.RegisterDriver(mockDriver, handler)
 
 	opened := false
@@ -243,7 +243,7 @@ func Test_query_apply_headers(t *testing.T) {
 			if opened {
 				// second query attempt will have tokens and won't return an error
 				handler = &testSqlHandler{}
-				mockDriver = "sqlmock-token"
+				mockDriver = "sqlmock-query-token"
 				mock.RegisterDriver(mockDriver, handler)
 			}
 			db, err := sql.Open(mockDriver, "")
