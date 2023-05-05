@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -65,11 +66,15 @@ func (q *Query) WithSQL(query string) *Query {
 }
 
 // GetQuery returns a Query object given a backend.DataQuery using json.Unmarshal
-func GetQuery(query backend.DataQuery) (*Query, error) {
+func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
 	model := &Query{}
 
 	if err := json.Unmarshal(query.JSON, &model); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrorJSON, err)
+	}
+
+	if setHeaders {
+		applyHeaders(model, headers)
 	}
 
 	// Copy directly from the well typed query
@@ -184,4 +189,26 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	}
 
 	return data.Frames{frame}, nil
+}
+
+func applyHeaders(query *Query, headers http.Header) *Query {
+	var args map[string]interface{}
+	if query.ConnectionArgs == nil {
+		query.ConnectionArgs = []byte("{}")
+	}
+	err := json.Unmarshal(query.ConnectionArgs, &args)
+	if err != nil {
+		backend.Logger.Warn(fmt.Sprintf("Failed to apply headers: %s", err.Error()))
+		return query
+	}
+	args[HeaderKey] = headers
+	raw, err := json.Marshal(args)
+	if err != nil {
+		backend.Logger.Warn(fmt.Sprintf("Failed to apply headers: %s", err.Error()))
+		return query
+	}
+
+	query.ConnectionArgs = raw
+
+	return query
 }

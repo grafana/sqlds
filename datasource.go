@@ -22,7 +22,7 @@ const defaultKeySuffix = "default"
 var (
 	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
 	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
-
+	HeaderKey                             = "grafana-http-headers"
 	// Deprecated: ErrorMissingMultipleConnectionsConfig should be used instead
 	MissingMultipleConnectionsConfig = ErrorMissingMultipleConnectionsConfig
 	// Deprecated: ErrorMissingDBConnection should be used instead
@@ -114,6 +114,8 @@ func (ds *SQLDatasource) Dispose() {
 
 // QueryData creates the Responses list and executes each query
 func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	headers := req.GetHTTPHeaders()
+
 	var (
 		response = NewResponse(backend.NewQueryDataResponse())
 		wg       = sync.WaitGroup{}
@@ -124,7 +126,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
+			frames, err := ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings), headers)
 			if err == nil {
 				if responseMutator, ok := ds.c.(ResponseMutator); ok {
 					frames, err = responseMutator.MutateResponse(ctx, frames)
@@ -150,7 +152,7 @@ func (ds *SQLDatasource) GetDBFromQuery(q *Query, datasourceUID string) (*sql.DB
 }
 
 func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
-	if !ds.EnableMultipleConnections && len(q.ConnectionArgs) > 0 {
+	if !ds.EnableMultipleConnections && !ds.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
@@ -182,13 +184,13 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string) (data.Frames, error) {
+func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string, headers http.Header) (data.Frames, error) {
 	if queryMutator, ok := ds.c.(QueryMutator); ok {
 		ctx, req = queryMutator.MutateQuery(ctx, req)
 	}
 
 	// Convert the backend.DataQuery into a Query object
-	q, err := GetQuery(req)
+	q, err := GetQuery(req, headers, ds.driverSettings.ForwardHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -302,19 +304,31 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		return ds.check(dbConn)
 	}
 
-	return ds.checkWithRetries(dbConn)
+	return ds.checkWithRetries(dbConn, key, req.GetHTTPHeaders())
 }
 
 func (ds *SQLDatasource) DriverSettings() DriverSettings {
 	return ds.driverSettings
 }
 
-func (ds *SQLDatasource) checkWithRetries(conn dbConnection) (*backend.CheckHealthResult, error) {
+func (ds *SQLDatasource) checkWithRetries(conn dbConnection, key string, headers http.Header) (*backend.CheckHealthResult, error) {
 	var result *backend.CheckHealthResult
-	var err error
+
+	q := &Query{}
+	if ds.driverSettings.ForwardHeaders {
+		applyHeaders(q, headers)
+	}
 
 	for i := 0; i < ds.driverSettings.Retries; i++ {
-		result, err = ds.check(conn)
+		db, err := ds.dbReconnect(conn, q, key)
+		if err != nil {
+			return nil, err
+		}
+		c := dbConnection{
+			db:       db,
+			settings: conn.settings,
+		}
+		result, err = ds.check(c)
 		if err == nil {
 			return result, err
 		}
