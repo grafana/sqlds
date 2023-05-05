@@ -299,7 +299,7 @@ func Test_check_health_with_headers(t *testing.T) {
 	handler := &testSqlHandler{
 		error: errors.New("missing token"),
 	}
-	mockDriver := "sqlmock-error"
+	mockDriver := "sqlmock-header-error"
 	mock.RegisterDriver(mockDriver, handler)
 
 	opened := false
@@ -312,7 +312,7 @@ func Test_check_health_with_headers(t *testing.T) {
 					ping:   true,
 					checks: handler.checks,
 				}
-				mockDriver = "sqlmock-token"
+				mockDriver = "sqlmock-header-token"
 				mock.RegisterDriver(mockDriver, handler)
 			}
 			db, err := sql.Open(mockDriver, "")
