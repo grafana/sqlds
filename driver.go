@@ -12,11 +12,12 @@ import (
 )
 
 type DriverSettings struct {
-	Timeout  time.Duration
-	FillMode *data.FillMissing
-	Retries  int
-	Pause    int
-	RetryOn  []string
+	Timeout        time.Duration
+	FillMode       *data.FillMissing
+	Retries        int
+	Pause          int
+	RetryOn        []string
+	ForwardHeaders bool
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource

@@ -18,13 +18,13 @@ import (
 )
 
 type fakeDriver struct {
-	openDBfn func() (*sql.DB, error)
+	openDBfn func(msg json.RawMessage) (*sql.DB, error)
 
 	Driver
 }
 
-func (d fakeDriver) Connect(backend.DataSourceInstanceSettings, json.RawMessage) (db *sql.DB, err error) {
-	return d.openDBfn()
+func (d fakeDriver) Connect(settings backend.DataSourceInstanceSettings, msg json.RawMessage) (db *sql.DB, err error) {
+	return d.openDBfn(msg)
 }
 
 func (d fakeDriver) Macros() Macros {
@@ -35,13 +35,11 @@ func (d fakeDriver) Converters() []sqlutil.Converter {
 	return []sqlutil.Converter{}
 }
 
-// func (d fakeDriver) Settings(backend.DataSourceInstanceSettings) DriverSettings
-
 func Test_getDBConnectionFromQuery(t *testing.T) {
 	db := &sql.DB{}
 	db2 := &sql.DB{}
 	db3 := &sql.DB{}
-	d := &fakeDriver{openDBfn: func() (*sql.DB, error) { return db3, nil }}
+	d := &fakeDriver{openDBfn: func(msg json.RawMessage) (*sql.DB, error) { return db3, nil }}
 	tests := []struct {
 		desc        string
 		dsUID       string
@@ -136,7 +134,7 @@ func Test_timeout_retries(t *testing.T) {
 	dsUID := "timeout"
 	settings := backend.DataSourceInstanceSettings{UID: dsUID}
 
-	handler := testSqlHandler{}
+	handler := &testSqlHandler{}
 	mockDriver := "sqlmock"
 	mock.RegisterDriver(mockDriver, handler)
 	db, err := sql.Open(mockDriver, "")
@@ -144,7 +142,13 @@ func Test_timeout_retries(t *testing.T) {
 		t.Errorf("failed to connect to mock driver: %v", err)
 	}
 	timeoutDriver := fakeDriver{
-		openDBfn: func() (*sql.DB, error) { return db, nil },
+		openDBfn: func(msg json.RawMessage) (*sql.DB, error) {
+			db, err := sql.Open(mockDriver, "")
+			if err != nil {
+				t.Errorf("failed to connect to mock driver: %v", err)
+			}
+			return db, nil
+		},
 	}
 	retries := 5
 	max := time.Duration(testTimeout) * time.Second
@@ -173,14 +177,14 @@ func Test_error_retries(t *testing.T) {
 	dsUID := "error"
 	settings := backend.DataSourceInstanceSettings{UID: dsUID}
 
-	handler := testSqlHandler{
+	handler := &testSqlHandler{
 		error: errors.New("foo"),
 	}
 	mockDriver := "sqlmock-error"
 	mock.RegisterDriver(mockDriver, handler)
 
 	timeoutDriver := fakeDriver{
-		openDBfn: func() (*sql.DB, error) {
+		openDBfn: func(msg json.RawMessage) (*sql.DB, error) {
 			db, err := sql.Open(mockDriver, "")
 			if err != nil {
 				t.Errorf("failed to connect to mock driver: %v", err)
@@ -220,6 +224,135 @@ func Test_error_retries(t *testing.T) {
 
 }
 
+func Test_query_apply_headers(t *testing.T) {
+	testCounter = 0
+	dsUID := "headers"
+	settings := backend.DataSourceInstanceSettings{UID: dsUID}
+
+	// first query will fail since the connection is missing tokens
+	handler := &testSqlHandler{
+		error: errors.New("missing token"),
+	}
+	mockDriver := "sqlmock-query-error"
+	mock.RegisterDriver(mockDriver, handler)
+
+	opened := false
+	var message json.RawMessage
+	timeoutDriver := fakeDriver{
+		openDBfn: func(msg json.RawMessage) (*sql.DB, error) {
+			if opened {
+				// second query attempt will have tokens and won't return an error
+				handler = &testSqlHandler{}
+				mockDriver = "sqlmock-query-token"
+				mock.RegisterDriver(mockDriver, handler)
+			}
+			db, err := sql.Open(mockDriver, "")
+			if err != nil {
+				t.Errorf("failed to connect to mock driver: %v", err)
+			}
+			opened = true
+			message = msg
+			return db, nil
+		},
+	}
+	max := time.Duration(10) * time.Second
+	// retry once for token errors since the first connection will not have the token and throw a connection error
+	driverSettings := DriverSettings{Retries: 1, Timeout: max, Pause: 1, RetryOn: []string{"token"}, ForwardHeaders: true}
+	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
+
+	key := defaultKey(dsUID)
+	// Add the mandatory default db
+	db, _ := timeoutDriver.Connect(settings, nil)
+	ds.storeDBConnection(key, dbConnection{db, settings})
+	ctx := context.Background()
+
+	qry := `{ "rawSql": "foo" }`
+
+	req := &backend.QueryDataRequest{
+		PluginContext: backend.PluginContext{
+			DataSourceInstanceSettings: &settings,
+		},
+		Queries: []backend.DataQuery{
+			{
+				RefID: "foo",
+				JSON:  []byte(qry),
+			},
+		},
+	}
+	req.SetHTTPHeader("hey", "scott")
+
+	data, err := ds.QueryData(ctx, req)
+	assert.Nil(t, err)
+	assert.NotNil(t, data.Responses)
+
+	res := data.Responses["foo"]
+	assert.Nil(t, res.Error)
+
+	assert.Contains(t, string(message), "scott")
+}
+
+func Test_check_health_with_headers(t *testing.T) {
+	dsUID := "headers"
+	settings := backend.DataSourceInstanceSettings{UID: dsUID}
+
+	// first check will fail since the connection is missing tokens
+	handler := &testSqlHandler{
+		error: errors.New("missing token"),
+	}
+	mockDriver := "sqlmock-header-error"
+	mock.RegisterDriver(mockDriver, handler)
+
+	opened := false
+	var message json.RawMessage
+	timeoutDriver := fakeDriver{
+		openDBfn: func(msg json.RawMessage) (*sql.DB, error) {
+			if opened {
+				// second query attempt will have tokens and won't return an error
+				handler = &testSqlHandler{
+					ping:   true,
+					checks: handler.checks,
+				}
+				mockDriver = "sqlmock-header-token"
+				mock.RegisterDriver(mockDriver, handler)
+			}
+			db, err := sql.Open(mockDriver, "")
+			if err != nil {
+				t.Errorf("failed to connect to mock driver: %v", err)
+			}
+			opened = true
+			message = msg
+			return db, nil
+		},
+	}
+	max := time.Duration(10) * time.Second
+	// retry once for token errors since the first connection will not have the token and throw a connection error
+	driverSettings := DriverSettings{Retries: 1, Timeout: max, Pause: 1, RetryOn: []string{"token"}, ForwardHeaders: true}
+	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
+
+	key := defaultKey(dsUID)
+	// Add the mandatory default db
+	db, _ := timeoutDriver.Connect(settings, nil)
+	ds.storeDBConnection(key, dbConnection{db, settings})
+	ctx := context.Background()
+
+	headers := map[string]string{}
+	headers["foo"] = "bar"
+	req := &backend.CheckHealthRequest{
+		PluginContext: backend.PluginContext{
+			DataSourceInstanceSettings: &settings,
+		},
+		Headers: headers,
+	}
+
+	req.SetHTTPHeader("foo", "bar")
+
+	res, err := ds.CheckHealth(ctx, req)
+	assert.Nil(t, err)
+	assert.Equal(t, "Data source is working", res.Message)
+
+	assert.Contains(t, string(message), "bar")
+}
+
 var testCounter = 0
 var testTimeout = 1
 var testRows = 0
@@ -227,11 +360,17 @@ var testRows = 0
 type testSqlHandler struct {
 	mock.DBHandler
 	error
+	ping   bool
+	checks int
 }
 
-func (s testSqlHandler) Ping(ctx context.Context) error {
+func (s *testSqlHandler) Ping(ctx context.Context) error {
+	s.checks += 1
 	if s.error != nil {
 		return s.error
+	}
+	if s.ping {
+		return nil
 	}
 	testCounter++                              // track the retries for the test assertion
 	time.Sleep(time.Duration(testTimeout + 1)) // simulate a connection delay
@@ -242,7 +381,7 @@ func (s testSqlHandler) Ping(ctx context.Context) error {
 	}
 }
 
-func (s testSqlHandler) Query(args []driver.Value) (driver.Rows, error) {
+func (s *testSqlHandler) Query(args []driver.Value) (driver.Rows, error) {
 	fmt.Println("query")
 	if s.error != nil {
 		testCounter++
@@ -251,11 +390,11 @@ func (s testSqlHandler) Query(args []driver.Value) (driver.Rows, error) {
 	return s, nil
 }
 
-func (s testSqlHandler) Columns() []string {
+func (s *testSqlHandler) Columns() []string {
 	return []string{"foo", "bar"}
 }
 
-func (s testSqlHandler) Next(dest []driver.Value) error {
+func (s *testSqlHandler) Next(dest []driver.Value) error {
 	testRows++
 	if testRows > 5 {
 		return io.EOF
@@ -265,6 +404,6 @@ func (s testSqlHandler) Next(dest []driver.Value) error {
 	return nil
 }
 
-func (s testSqlHandler) Close() error {
+func (s *testSqlHandler) Close() error {
 	return nil
 }
