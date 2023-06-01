@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/grafana/sqlds/v2/mock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type fakeDriver struct {
@@ -52,14 +53,14 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			desc:        "it should return the default db with no args",
 			dsUID:       "uid1",
 			args:        "",
-			expectedKey: "uid1-default",
+			expectedKey: "10815284118221063685",
 			expectedDB:  db,
 		},
 		{
 			desc:        "it should return the cached connection for the given args",
 			dsUID:       "uid1",
 			args:        "foo",
-			expectedKey: "uid1-foo",
+			expectedKey: "10815284118221063685-foo",
 			existingDB:  db2,
 			expectedDB:  db2,
 		},
@@ -67,7 +68,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			desc:        "it should create a new connection with the given args",
 			dsUID:       "uid1",
 			args:        "foo",
-			expectedKey: "uid1-foo",
+			expectedKey: "10815284118221063685-foo",
 			expectedDB:  db3,
 		},
 	}
@@ -75,15 +76,17 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			ds := &SQLDatasource{c: d, EnableMultipleConnections: true}
 			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
-			key := defaultKey(tt.dsUID)
+			key, err := instanceKey(settings)
+			require.NoError(t, err)
 			// Add the mandatory default db
 			ds.storeDBConnection(key, dbConnection{db, settings})
 			if tt.existingDB != nil {
-				key = keyWithConnectionArgs(tt.dsUID, []byte(tt.args))
+				key, err = instanceKeyWithConnectionArgs(settings, []byte(tt.args))
+				require.NoError(t, err)
 				ds.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
-			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
+			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, settings)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -97,16 +100,18 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
+		settings := backend.DataSourceInstanceSettings{UID: "dsUID"}
 		ds := &SQLDatasource{c: d, EnableMultipleConnections: false}
-		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, settings)
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
 		}
 	})
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
+		settings := backend.DataSourceInstanceSettings{UID: "dsUID"}
 		ds := &SQLDatasource{c: d}
-		_, _, err := ds.getDBConnectionFromQuery(&Query{}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(&Query{}, settings)
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
 		}
@@ -115,8 +120,12 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 func Test_Dispose(t *testing.T) {
 	t.Run("it should not delete connections", func(t *testing.T) {
+		settings := backend.DataSourceInstanceSettings{UID: "uid1"}
+		key, err := instanceKey(settings)
+		require.NoError(t, err)
+
 		ds := &SQLDatasource{}
-		ds.dbConnections.Store(defaultKey("uid1"), dbConnection{})
+		ds.dbConnections.Store(key, dbConnection{})
 		ds.dbConnections.Store("foo", dbConnection{})
 		ds.Dispose()
 		count := 0
@@ -155,7 +164,8 @@ func Test_timeout_retries(t *testing.T) {
 	driverSettings := DriverSettings{Retries: retries, Timeout: max, RetryOn: []string{"deadline"}}
 	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
 
-	key := defaultKey(dsUID)
+	key, err := instanceKey(settings)
+	require.NoError(t, err)
 	// Add the mandatory default db
 	ds.storeDBConnection(key, dbConnection{db, settings})
 	ctx := context.Background()
@@ -197,7 +207,8 @@ func Test_error_retries(t *testing.T) {
 	driverSettings := DriverSettings{Retries: retries, Timeout: max, Pause: 1, RetryOn: []string{"foo"}}
 	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
 
-	key := defaultKey(dsUID)
+	key, err := instanceKey(settings)
+	require.NoError(t, err)
 	// Add the mandatory default db
 	db, _ := timeoutDriver.Connect(settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})
@@ -260,7 +271,8 @@ func Test_query_apply_headers(t *testing.T) {
 	driverSettings := DriverSettings{Retries: 1, Timeout: max, Pause: 1, RetryOn: []string{"token"}, ForwardHeaders: true}
 	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
 
-	key := defaultKey(dsUID)
+	key, err := instanceKey(settings)
+	require.NoError(t, err)
 	// Add the mandatory default db
 	db, _ := timeoutDriver.Connect(settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})
@@ -329,7 +341,8 @@ func Test_check_health_with_headers(t *testing.T) {
 	driverSettings := DriverSettings{Retries: 1, Timeout: max, Pause: 1, RetryOn: []string{"token"}, ForwardHeaders: true}
 	ds := &SQLDatasource{c: timeoutDriver, driverSettings: driverSettings}
 
-	key := defaultKey(dsUID)
+	key, err := instanceKey(settings)
+	require.NoError(t, err)
 	// Add the mandatory default db
 	db, _ := timeoutDriver.Connect(settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})

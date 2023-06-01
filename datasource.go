@@ -15,9 +15,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	"github.com/grafana/grafana-plugin-sdk-go/experimental/hash"
 )
-
-const defaultKeySuffix = "default"
 
 var (
 	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
@@ -29,12 +28,20 @@ var (
 	MissingDBConnection = ErrorMissingDBConnection
 )
 
-func defaultKey(datasourceUID string) string {
-	return fmt.Sprintf("%s-%s", datasourceUID, defaultKeySuffix)
+func instanceKey(settings backend.DataSourceInstanceSettings) (string, error) {
+	key, err := hash.HashDataSourceSettings(settings)
+	if err != nil {
+		return "", err
+	}
+	return key, nil
 }
 
-func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) string {
-	return fmt.Sprintf("%s-%s", datasourceUID, string(connArgs))
+func instanceKeyWithConnectionArgs(settings backend.DataSourceInstanceSettings, connArgs json.RawMessage) (string, error) {
+	key, err := instanceKey(settings)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s", key, string(connArgs)), nil
 }
 
 type dbConnection struct {
@@ -69,15 +76,6 @@ func (ds *SQLDatasource) storeDBConnection(key string, dbConn dbConnection) {
 	ds.dbConnections.Store(key, dbConn)
 }
 
-func getDatasourceUID(settings backend.DataSourceInstanceSettings) string {
-	datasourceUID := settings.UID
-	// Grafana < 8.0 won't include the UID yet
-	if datasourceUID == "" {
-		datasourceUID = fmt.Sprintf("%d", settings.ID)
-	}
-	return datasourceUID
-}
-
 // NewDatasource creates a new `SQLDatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
 func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
@@ -85,7 +83,10 @@ func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	key := defaultKey(getDatasourceUID(settings))
+	key, err := hash.HashDataSourceSettings(settings)
+	if err != nil {
+		return nil, err
+	}
 	ds.storeDBConnection(key, dbConnection{db, settings})
 
 	mux := http.NewServeMux()
@@ -126,7 +127,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(ctx, query, getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings), headers)
+			frames, err := ds.handleQuery(ctx, query, *req.PluginContext.DataSourceInstanceSettings, headers)
 			if err == nil {
 				if responseMutator, ok := ds.c.(ResponseMutator); ok {
 					frames, err = responseMutator.MutateResponse(ctx, frames)
@@ -146,18 +147,21 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 }
 
-func (ds *SQLDatasource) GetDBFromQuery(q *Query, datasourceUID string) (*sql.DB, error) {
-	_, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+func (ds *SQLDatasource) GetDBFromQuery(q *Query, settings backend.DataSourceInstanceSettings) (*sql.DB, error) {
+	_, dbConn, err := ds.getDBConnectionFromQuery(q, settings)
 	return dbConn.db, err
 }
 
-func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
+func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, settings backend.DataSourceInstanceSettings) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && !ds.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := defaultKey(datasourceUID)
+	key, err := instanceKey(settings)
+	if err != nil {
+		return "", dbConnection{}, err
+	}
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
 		return "", dbConnection{}, MissingDBConnection
@@ -166,12 +170,14 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 		return key, dbConn, nil
 	}
 
-	key = keyWithConnectionArgs(datasourceUID, q.ConnectionArgs)
+	key, err = instanceKeyWithConnectionArgs(settings, q.ConnectionArgs)
+	if err != nil {
+		return "", dbConnection{}, err
+	}
 	if cachedConn, ok := ds.getDBConnection(key); ok {
 		return key, cachedConn, nil
 	}
 
-	var err error
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		return "", dbConnection{}, err
@@ -184,7 +190,7 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string, headers http.Header) (data.Frames, error) {
+func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, settings backend.DataSourceInstanceSettings, headers http.Header) (data.Frames, error) {
 	if queryMutator, ok := ds.c.(QueryMutator); ok {
 		ctx, req = queryMutator.MutateQuery(ctx, req)
 	}
@@ -201,14 +207,14 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
 	}
 
-	// Apply the default FillMode, overwritting it if the query specifies it
+	// Apply the default FillMode, overwriting it if the query specifies it
 	fillMode := ds.driverSettings.FillMode
 	if q.FillMissing != nil {
 		fillMode = q.FillMissing
 	}
 
 	// Retrieve the database connection
-	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q, settings)
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
@@ -294,7 +300,10 @@ func (ds *SQLDatasource) dbReconnect(dbConn dbConnection, q *Query, cacheKey str
 
 // CheckHealth pings the connected SQL database
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
+	key, err := instanceKey(*req.PluginContext.DataSourceInstanceSettings)
+	if err != nil {
+		return nil, err
+	}
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
 		return nil, MissingDBConnection
