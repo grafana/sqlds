@@ -383,7 +383,13 @@ func shouldRetry(retryOn []string, err string) bool {
 }
 
 func (ds *SQLDatasource) errors(response *Response) error {
+	if response == nil {
+		return nil
+	}
 	res := response.Response()
+	if res == nil {
+		return nil
+	}
 	var errs = []string{}
 	for _, r := range res.Responses {
 		if r.Error != nil {
