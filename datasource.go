@@ -142,7 +142,8 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	}
 
 	wg.Wait()
-	return response.Response(), nil
+
+	return response.Response(), ds.errors(response)
 
 }
 
@@ -379,4 +380,18 @@ func shouldRetry(retryOn []string, err string) bool {
 		}
 	}
 	return false
+}
+
+func (ds *SQLDatasource) errors(response *Response) error {
+	res := response.Response()
+	var errs = []string{}
+	for _, r := range res.Responses {
+		if r.Error != nil {
+			errs = append(errs, r.Error.Error())
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(errs, ","))
 }
