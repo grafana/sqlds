@@ -383,6 +383,9 @@ func shouldRetry(retryOn []string, err string) bool {
 }
 
 func (ds *SQLDatasource) errors(response *Response) error {
+	if !ds.driverSettings.Errors {
+		return nil
+	}
 	if response == nil {
 		return nil
 	}
@@ -390,14 +393,14 @@ func (ds *SQLDatasource) errors(response *Response) error {
 	if res == nil {
 		return nil
 	}
-	var errs = []string{}
+	var errs = []error{}
 	for _, r := range res.Responses {
 		if r.Error != nil {
-			errs = append(errs, r.Error.Error())
+			errs = append(errs, r.Error)
 		}
 	}
 	if len(errs) == 0 {
 		return nil
 	}
-	return errors.New(strings.Join(errs, ","))
+	return errors.Join(errs...)
 }
