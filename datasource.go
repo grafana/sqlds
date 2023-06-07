@@ -142,8 +142,13 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	}
 
 	wg.Wait()
-	return response.Response(), nil
 
+	errs := ds.errors(response)
+	if ds.driverSettings.Errors {
+		return response.Response(), errs
+	}
+
+	return response.Response(), nil
 }
 
 func (ds *SQLDatasource) GetDBFromQuery(q *Query, datasourceUID string) (*sql.DB, error) {
@@ -379,4 +384,22 @@ func shouldRetry(retryOn []string, err string) bool {
 		}
 	}
 	return false
+}
+
+func (ds *SQLDatasource) errors(response *Response) error {
+	if response == nil {
+		return nil
+	}
+	res := response.Response()
+	if res == nil {
+		return nil
+	}
+	var err error
+	for _, r := range res.Responses {
+		err = errors.Join(err, r.Error)
+	}
+	if err != nil {
+		backend.Logger.Error(err.Error())
+	}
+	return err
 }

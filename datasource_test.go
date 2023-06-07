@@ -353,6 +353,46 @@ func Test_check_health_with_headers(t *testing.T) {
 	assert.Contains(t, string(message), "bar")
 }
 
+func Test_no_errors(t *testing.T) {
+	dsUID := "pass"
+	settings := backend.DataSourceInstanceSettings{UID: dsUID}
+
+	handler := &testSqlHandler{pass: true}
+	mockDriver := "no-errors"
+	mock.RegisterDriver(mockDriver, handler)
+	db, err := sql.Open(mockDriver, "")
+	if err != nil {
+		t.Errorf("failed to connect to mock driver: %v", err)
+	}
+	driver := fakeDriver{
+		openDBfn: func(msg json.RawMessage) (*sql.DB, error) {
+			db, err := sql.Open(mockDriver, "")
+			if err != nil {
+				t.Errorf("failed to connect to mock driver: %v", err)
+			}
+			return db, nil
+		},
+	}
+	max := time.Duration(10) * time.Second
+	driverSettings := DriverSettings{Retries: 1, Timeout: max, RetryOn: []string{""}, Errors: true}
+	ds := &SQLDatasource{c: driver, driverSettings: driverSettings}
+
+	key := defaultKey(dsUID)
+	// Add the mandatory default db
+	ds.storeDBConnection(key, dbConnection{db, settings})
+	ctx := context.Background()
+	req := &backend.CheckHealthRequest{
+		PluginContext: backend.PluginContext{
+			DataSourceInstanceSettings: &settings,
+		},
+	}
+	result, err := ds.CheckHealth(ctx, req)
+
+	assert.Nil(t, err)
+	expected := "Data source is working"
+	assert.Equal(t, expected, result.Message)
+}
+
 var testCounter = 0
 var testTimeout = 1
 var testRows = 0
@@ -362,10 +402,14 @@ type testSqlHandler struct {
 	error
 	ping   bool
 	checks int
+	pass   bool
 }
 
 func (s *testSqlHandler) Ping(ctx context.Context) error {
 	s.checks += 1
+	if s.pass {
+		return nil
+	}
 	if s.error != nil {
 		return s.error
 	}
