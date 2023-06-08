@@ -29,7 +29,7 @@ var (
 )
 
 func instanceKey(settings backend.DataSourceInstanceSettings) (string, error) {
-	key, err := hash.HashDataSourceSettings(settings)
+	key, err := hash.DataSourceSettings(settings)
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +83,7 @@ func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	if err != nil {
 		return nil, err
 	}
-	key, err := hash.HashDataSourceSettings(settings)
+	key, err := hash.DataSourceSettings(settings)
 	if err != nil {
 		return nil, err
 	}
