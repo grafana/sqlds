@@ -176,7 +176,6 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 		return key, cachedConn, nil
 	}
 
-	var err error
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		return "", dbConnection{}, err
