@@ -75,9 +75,11 @@ func (s *SqlHandler) Query(args []driver.Value) (driver.Rows, error) {
 		time.Sleep(time.Duration(s.Opts.QueryDelay * int(time.Second))) // simulate a query delay
 	}
 	s.row = 0
-	if s.Opts.QueryError != nil {
+	// only show the error if we have not exceeded the fail times and the error is not nil
+	if s.Opts.QueryError != nil && (s.Opts.QueryFailTimes == 0 || s.State.QueryAttempts <= s.Opts.QueryFailTimes) {
 		return s, s.Opts.QueryError
 	}
+
 	return s, nil
 }
 
@@ -148,10 +150,11 @@ func (s TestDS) Open() (*sql.DB, error) {
 
 // DriverOpts the optional settings
 type DriverOpts struct {
-	ConnectDelay int
-	QueryDelay   int
-	ConnectError error
-	QueryError   error
+	ConnectDelay   int
+	QueryDelay     int
+	ConnectError   error
+	QueryError     error
+	QueryFailTimes int
 }
 
 // State is the state of the connections/queries
