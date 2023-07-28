@@ -257,7 +257,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				if ds.driverSettings.Pause > 0 {
 					time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
 				}
-				res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+				res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q, args...)
 				if err == nil {
 					return res, err
 				}
@@ -278,7 +278,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				continue
 			}
 
-			res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q)
+			res, err = QueryDB(ctx, db, ds.c.Converters(), fillMode, q, args...)
 			if err == nil {
 				return res, err
 			}
