@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -45,6 +46,12 @@ type Connection interface {
 // This adds ability to the driver it can mutate query before run.
 type QueryMutator interface {
 	MutateQuery(ctx context.Context, req backend.DataQuery) (context.Context, backend.DataQuery)
+}
+
+// QueryArgSetter is an additional interface that could be implemented by driver.
+// This adds the ability to the driver to optionally set query args that are then sent down to the database.
+type QueryArgSetter interface {
+	SetQueryArgs(ctx context.Context, headers http.Header) []interface{}
 }
 
 // ResponseMutator is an additional interface that could be implemented by driver.
