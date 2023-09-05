@@ -32,6 +32,13 @@ func (h *MockDB) Macros() (macros Macros) {
 		"timeGroup": func(query *Query, args []string) (out string, err error) {
 			return "grouped!", nil
 		},
+		"multiParams": func(query *Query, args []string) (out string, err error) {
+			r := "bar"
+			for _, v := range args {
+				r += "_" + v
+			}
+			return r, nil
+		},
 	}
 }
 
@@ -71,6 +78,8 @@ func TestInterpolate(t *testing.T) {
 		{input: "select $__column from $__table", output: "select my_col from my_table", name: "table and column macros"},
 		{input: "select * from table where ( datetime >= $__foo() ) AND ( datetime <= $__foo() ) limit 100", output: "select * from table where ( datetime >= bar ) AND ( datetime <= bar ) limit 100", name: "macro functions inside more complex clauses"},
 		{input: "select * from table where ( datetime >= $__foo ) AND ( datetime <= $__foo ) limit 100", output: "select * from table where ( datetime >= bar ) AND ( datetime <= bar ) limit 100", name: "macros inside more complex clauses"},
+		{input: "select * from foo where $__multiParams(foo, bar)", output: "select * from foo where bar_foo_bar", name: "macro with multiple parameters"},
+		{input: "select * from foo where $__params(FUNC(foo, bar))", output: "select * from foo where bar_FUNC(foo, bar)", name: "function in macro with multiple parameters"},
 	}
 	for i, tc := range tests {
 		driver := MockDB{}
@@ -90,14 +99,14 @@ func TestInterpolate(t *testing.T) {
 func TestGetMatches(t *testing.T) {
 	t.Run("FindAllStringSubmatch returns DefaultMacros", func(t *testing.T) {
 		for macroName := range DefaultMacros {
-			matches, err := getMatches(macroName, fmt.Sprintf("$__%s", macroName))
+			matches, err := getMacroMatches(fmt.Sprintf("$__%s", macroName), macroName)
 
 			assert.NoError(t, err)
-			assert.Equal(t, [][]string{{fmt.Sprintf("$__%s", macroName), ""}}, matches)
+			assert.Equal(t, []Macro{{Name: fmt.Sprintf("$__%s", macroName), Args: []string{""}}}, matches)
 		}
 	})
 	t.Run("does not return matches for macro name which is substring", func(t *testing.T) {
-		matches, err := getMatches("timeFilter", "$__timeFilterEpoch(time_column)")
+		matches, err := getMacroMatches("$__timeFilterEpoch(time_column)", "timeFilter")
 
 		assert.NoError(t, err)
 		assert.Nil(t, matches)
