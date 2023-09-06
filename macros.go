@@ -126,22 +126,16 @@ var DefaultMacros Macros = Macros{
 	"column":     macroColumn,
 }
 
-func trimAll(s []string) []string {
-	r := make([]string, len(s))
-	for i, v := range s {
-		r[i] = strings.TrimSpace(v)
-	}
-
-	return r
+type Macro struct {
+	Name string
+	Args []string
 }
-
-var pair = map[rune]rune{')': '('}
 
 // getMacroMatches extracts macro strings with their respective arguments from the sql input given
 // It manually parses the string to find the closing parenthesis of the macro (because regex has no memory)
-func getMacroMatches(input string, name string) ([][]string, error) {
+func getMacroMatches(input string, name string) ([]Macro, error) {
 	macroName := fmt.Sprintf("\\$__%s\\b", name)
-	matchedMacros := [][]string{}
+	matchedMacros := []Macro{}
 	rgx, err := regexp.Compile(macroName)
 
 	if err != nil {
@@ -201,17 +195,41 @@ func getMacroMatches(input string, name string) ([][]string, error) {
 			macroEnd = matched[matchedIndex][1] - macroStart
 		}
 		macroString := inputCopy[0:macroEnd]
-		macroMatch := []string{macroString}
+		macroMatch := Macro{Name: macroString}
 
 		args := ""
 		// if opening parenthesis was found, extract contents as arguments
 		if argStart > 0 {
 			args = inputCopy[argStart : macroEnd-1]
 		}
-		macroMatch = append(macroMatch, args)
+		macroMatch.Args = parseArgs(args)
 		matchedMacros = append(matchedMacros, macroMatch)
 	}
 	return matchedMacros, nil
+}
+
+func parseArgs(args string) []string {
+	argsArray := []string{}
+	phrase := []rune{}
+	bracketCount := 0
+	for _, v := range args {
+		phrase = append(phrase, v)
+		if v == '(' {
+			bracketCount++
+			continue
+		}
+		if v == ')' {
+			bracketCount--
+			continue
+		}
+		if v == ',' && bracketCount == 0 {
+			removeComma := phrase[:len(phrase)-1]
+			argsArray = append(argsArray, string(removeComma))
+			phrase = []rune{}
+		}
+	}
+	argsArray = append(argsArray, strings.TrimSpace(string(phrase)))
+	return argsArray
 }
 
 // Interpolate returns an interpolated query string given a backend.DataQuery
@@ -223,41 +241,23 @@ func Interpolate(driver Driver, query *Query) (string, error) {
 	rawSQL := query.RawSQL
 
 	for key, macro := range macros {
-		matches, err := getMatches(key, rawSQL)
-
+		matches, err := getMacroMatches(rawSQL, key)
 		if err != nil {
 			return rawSQL, err
 		}
+		if len(matches) == 0 {
+			continue
+		}
+
 		for _, match := range matches {
-			if len(match) == 0 {
-				// There were no matches for this macro
-				continue
-			}
-
-			args := []string{}
-			if len(match) > 1 {
-				// This macro has arguments
-				args = trimAll(strings.Split(match[1], ","))
-			}
-
-			res, err := macro(query.WithSQL(rawSQL), args)
+			res, err := macro(query.WithSQL(rawSQL), match.Args)
 			if err != nil {
 				return rawSQL, err
 			}
 
-			rawSQL = strings.Replace(rawSQL, match[0], res, -1)
+			rawSQL = strings.Replace(rawSQL, match.Name, res, -1)
 		}
 	}
 
 	return rawSQL, nil
-}
-
-func getMatches(macroName, rawSQL string) ([][]string, error) {
-	parsedInput, err := getMacroMatches(rawSQL, macroName)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return parsedInput, err
 }
