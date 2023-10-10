@@ -30,7 +30,7 @@ type Macros map[string]MacroFunc
 //	$__timeFilter(time) => "time BETWEEN '2006-01-02T15:04:05Z07:00' AND '2006-01-02T15:04:05Z07:00'"
 func macroTimeFilter(query *Query, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
+		return "", invalidArgs(args)
 	}
 
 	var (
@@ -49,7 +49,7 @@ func macroTimeFilter(query *Query, args []string) (string, error) {
 //	$__timeFrom(time) => "time > '2006-01-02T15:04:05Z07:00'"
 func macroTimeFrom(query *Query, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
+		return "", invalidArgs(args)
 	}
 
 	return fmt.Sprintf("%s >= '%s'", args[0], query.TimeRange.From.UTC().Format(time.RFC3339)), nil
@@ -63,7 +63,7 @@ func macroTimeFrom(query *Query, args []string) (string, error) {
 //	$__timeTo(time) => "time < '2006-01-02T15:04:05Z07:00'"
 func macroTimeTo(query *Query, args []string) (string, error) {
 	if len(args) != 1 {
-		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
+		return "", invalidArgs(args)
 	}
 
 	return fmt.Sprintf("%s <= '%s'", args[0], query.TimeRange.To.UTC().Format(time.RFC3339)), nil
@@ -77,7 +77,7 @@ func macroTimeTo(query *Query, args []string) (string, error) {
 //	$__timeTo(time, month) => "datepart(year, time), datepart(month, time)'"
 func macroTimeGroup(query *Query, args []string) (string, error) {
 	if len(args) != 2 {
-		return "", fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args))
+		return "", invalidArgs(args)
 	}
 
 	res := ""
@@ -260,4 +260,8 @@ func Interpolate(driver Driver, query *Query) (string, error) {
 	}
 
 	return rawSQL, nil
+}
+
+func invalidArgs(args []string) error {
+	return DownstreamError(fmt.Errorf("%w: expected 1 argument, received %d", ErrorBadArgumentCount, len(args)))
 }
