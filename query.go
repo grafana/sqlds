@@ -70,7 +70,7 @@ func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Q
 	model := &Query{}
 
 	if err := json.Unmarshal(query.JSON, &model); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrorJSON, err)
+		return nil, PluginError(fmt.Errorf("%w: %v", ErrorJSON, err))
 	}
 
 	if setHeaders {
