@@ -181,7 +181,7 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return "", dbConnection{}, err
+		return "", dbConnection{}, DownstreamError(err)
 	}
 	// Assign this connection in the cache
 	dbConn = dbConnection{db, dbConn.settings}
@@ -241,7 +241,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return res, nil
 	}
 
-	err = Unwrap(err)
+	// err = Unwrap(err)
 
 	if errors.Is(err, ErrorNoResults) {
 		return res, nil

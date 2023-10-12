@@ -3,7 +3,6 @@ package sqlds
 import (
 	"errors"
 
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	es "github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
 )
 
@@ -20,29 +19,10 @@ var (
 	ErrorNoResults = errors.New("no results returned from query")
 )
 
-func PluginError(err error) error {
-	return SourceError(backend.ErrorSourcePlugin, err)
+func PluginError(err error, override ...bool) error {
+	return es.PluginError(err, len(override) > 0)
 }
 
-func DownstreamError(err error) error {
-	return SourceError(backend.ErrorSourceDownstream, err)
-}
-
-func SourceError(source backend.ErrorSource, err error) error {
-	_, ok := err.(es.Error)
-	if ok {
-		return err //already has a source
-	}
-	return es.Error{
-		Source: source,
-		Err:    err,
-	}
-}
-
-func Unwrap(err error) error {
-	e, ok := err.(es.Error)
-	if ok {
-		return e.Err
-	}
-	return err
+func DownstreamError(err error, override ...bool) error {
+	return es.DownstreamError(err, len(override) > 0)
 }
