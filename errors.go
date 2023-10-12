@@ -38,3 +38,11 @@ func SourceError(source backend.ErrorSource, err error) error {
 		Err:    err,
 	}
 }
+
+func Unwrap(err error) error {
+	e, ok := err.(es.Error)
+	if ok {
+		return e.Err
+	}
+	return err
+}

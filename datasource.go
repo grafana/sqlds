@@ -241,6 +241,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return res, nil
 	}
 
+	err = Unwrap(err)
+
 	if errors.Is(err, ErrorNoResults) {
 		return res, nil
 	}
