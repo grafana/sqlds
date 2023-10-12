@@ -11,10 +11,14 @@ The `sqlds` package is intended to remove the repetition of these datasources an
 **Usage**
 
 ```go
-ds := sqlds.NewDatasource(&myDatasource{})
-if err := datasource.Manage("my-datasource", ds.NewDatasource, datasource.ManageOpts{}); err != nil {
+if err := datasource.Manage("my-datasource", datasourceFactory, datasource.ManageOpts{}); err != nil {
   log.DefaultLogger.Error(err.Error())
   os.Exit(1)
+}
+
+func datasourceFactory(s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+  ds := sqlds.NewDatasource(&myDatasource{})
+  return ds.NewDatasource(s)
 }
 ```
 
