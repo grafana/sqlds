@@ -1,20 +1,20 @@
 package sqlds
 
 import (
-		"context"
-		"database/sql"
-		"database/sql/driver"
-		"encoding/json"
-		"errors"
-		"fmt"
-		"io"
-		"testing"
-		"time"
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"testing"
+	"time"
 
-		"github.com/grafana/grafana-plugin-sdk-go/backend"
-		"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-		"github.com/grafana/sqlds/v2/mock"
-		"github.com/stretchr/testify/assert"
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/grafana/sqlds/v2/mock"
+	"github.com/stretchr/testify/assert"
 )
 
 type fakeDriver struct {
