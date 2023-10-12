@@ -1,20 +1,20 @@
 package sqlds
 
 import (
-	"context"
-	"database/sql"
-	"database/sql/driver"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"testing"
-	"time"
+		"context"
+		"database/sql"
+		"database/sql/driver"
+		"encoding/json"
+		"errors"
+		"fmt"
+		"io"
+		"testing"
+		"time"
 
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/grafana/sqlds/v2/mock"
-	"github.com/stretchr/testify/assert"
+		"github.com/grafana/grafana-plugin-sdk-go/backend"
+		"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+		"github.com/grafana/sqlds/v2/mock"
+		"github.com/stretchr/testify/assert"
 )
 
 type fakeDriver struct {
@@ -23,7 +23,7 @@ type fakeDriver struct {
 	Driver
 }
 
-func (d fakeDriver) Connect(settings backend.DataSourceInstanceSettings, msg json.RawMessage) (db *sql.DB, err error) {
+func (d fakeDriver) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, msg json.RawMessage) (db *sql.DB, err error) {
 	return d.openDBfn(msg)
 }
 
@@ -83,7 +83,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 				ds.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
-			key, dbConn, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
+			key, dbConn, err := ds.getDBConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -98,7 +98,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
 		ds := &SQLDatasource{c: d, EnableMultipleConnections: false}
-		_, _, err := ds.getDBConnectionFromQuery(&Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
 		}
@@ -106,7 +106,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
 		ds := &SQLDatasource{c: d}
-		_, _, err := ds.getDBConnectionFromQuery(&Query{}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(context.Background(), &Query{}, "dsUID")
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
 		}
@@ -199,7 +199,7 @@ func Test_error_retries(t *testing.T) {
 
 	key := defaultKey(dsUID)
 	// Add the mandatory default db
-	db, _ := timeoutDriver.Connect(settings, nil)
+	db, _ := timeoutDriver.Connect(context.Background(), settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})
 	ctx := context.Background()
 
@@ -262,7 +262,7 @@ func Test_query_apply_headers(t *testing.T) {
 
 	key := defaultKey(dsUID)
 	// Add the mandatory default db
-	db, _ := timeoutDriver.Connect(settings, nil)
+	db, _ := timeoutDriver.Connect(context.Background(), settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})
 	ctx := context.Background()
 
@@ -331,7 +331,7 @@ func Test_check_health_with_headers(t *testing.T) {
 
 	key := defaultKey(dsUID)
 	// Add the mandatory default db
-	db, _ := timeoutDriver.Connect(settings, nil)
+	db, _ := timeoutDriver.Connect(context.Background(), settings, nil)
 	ds.storeDBConnection(key, dbConnection{db, settings})
 	ctx := context.Background()
 

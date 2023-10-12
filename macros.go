@@ -1,7 +1,7 @@
 package sqlds
 
 import (
-	"errors"
+		"errors"
 	"fmt"
 	"regexp"
 	"strings"

@@ -80,8 +80,8 @@ func getDatasourceUID(settings backend.DataSourceInstanceSettings) string {
 
 // NewDatasource creates a new `SQLDatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
-func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	db, err := ds.c.Connect(settings, nil)
+func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	db, err := ds.c.Connect(ctx, settings, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
-	ds.driverSettings = ds.c.Settings(settings)
+	ds.driverSettings = ds.c.Settings(ctx, settings)
 
 	return ds, nil
 }
@@ -151,12 +151,12 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	return response.Response(), nil
 }
 
-func (ds *SQLDatasource) GetDBFromQuery(q *Query, datasourceUID string) (*sql.DB, error) {
-	_, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+func (ds *SQLDatasource) GetDBFromQuery(ctx context.Context, q *Query, datasourceUID string) (*sql.DB, error) {
+	_, dbConn, err := ds.getDBConnectionFromQuery(ctx, q, datasourceUID)
 	return dbConn.db, err
 }
 
-func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string) (string, dbConnection, error) {
+func (ds *SQLDatasource) getDBConnectionFromQuery(ctx context.Context, q *Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && !ds.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
@@ -176,7 +176,7 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 		return key, cachedConn, nil
 	}
 
-	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+	db, err := ds.c.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		return "", dbConnection{}, err
 	}
@@ -212,7 +212,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Retrieve the database connection
-	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(q, datasourceUID)
+	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(ctx, q, datasourceUID)
 	if err != nil {
 		return getErrorFrameFromQuery(q), err
 	}
@@ -249,7 +249,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		if shouldRetry(ds.driverSettings.RetryOn, err.Error()) {
 			for i := 0; i < ds.driverSettings.Retries; i++ {
 				backend.Logger.Warn(fmt.Sprintf("query failed: %s. Retrying %d times", err.Error(), i))
-				db, err := ds.dbReconnect(dbConn, q, cacheKey)
+				db, err := ds.dbReconnect(ctx, dbConn, q, cacheKey)
 				if err != nil {
 					return nil, err
 				}
@@ -273,7 +273,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	if errors.Is(err, context.DeadlineExceeded) {
 		for i := 0; i < ds.driverSettings.Retries; i++ {
 			backend.Logger.Warn(fmt.Sprintf("connection timed out. retrying %d times", i))
-			db, err := ds.dbReconnect(dbConn, q, cacheKey)
+			db, err := ds.dbReconnect(ctx, dbConn, q, cacheKey)
 			if err != nil {
 				continue
 			}
@@ -288,12 +288,12 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	return nil, err
 }
 
-func (ds *SQLDatasource) dbReconnect(dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
+func (ds *SQLDatasource) dbReconnect(ctx context.Context, dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
 	if err := dbConn.db.Close(); err != nil {
 		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
 	}
 
-	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
+	db, err := ds.c.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -313,14 +313,14 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		return ds.check(dbConn)
 	}
 
-	return ds.checkWithRetries(dbConn, key, req.GetHTTPHeaders())
+	return ds.checkWithRetries(ctx, dbConn, key, req.GetHTTPHeaders())
 }
 
 func (ds *SQLDatasource) DriverSettings() DriverSettings {
 	return ds.driverSettings
 }
 
-func (ds *SQLDatasource) checkWithRetries(conn dbConnection, key string, headers http.Header) (*backend.CheckHealthResult, error) {
+func (ds *SQLDatasource) checkWithRetries(ctx context.Context, conn dbConnection, key string, headers http.Header) (*backend.CheckHealthResult, error) {
 	var result *backend.CheckHealthResult
 
 	q := &Query{}
@@ -329,7 +329,7 @@ func (ds *SQLDatasource) checkWithRetries(conn dbConnection, key string, headers
 	}
 
 	for i := 0; i < ds.driverSettings.Retries; i++ {
-		db, err := ds.dbReconnect(conn, q, key)
+		db, err := ds.dbReconnect(ctx, conn, q, key)
 		if err != nil {
 			return nil, err
 		}

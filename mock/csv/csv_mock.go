@@ -22,7 +22,7 @@ type SQLCSVMock struct {
 	folder string
 }
 
-func (h *SQLCSVMock) Settings(config backend.DataSourceInstanceSettings) sqlds.DriverSettings {
+func (h *SQLCSVMock) Settings(_ context.Context, _ backend.DataSourceInstanceSettings) sqlds.DriverSettings {
 	return sqlds.DriverSettings{
 		FillMode: &data.FillMissing{
 			Mode: data.FillModeNull,
@@ -32,7 +32,7 @@ func (h *SQLCSVMock) Settings(config backend.DataSourceInstanceSettings) sqlds.D
 }
 
 // Connect opens a sql.DB connection using datasource settings
-func (h *SQLCSVMock) Connect(config backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
+func (h *SQLCSVMock) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
 	backend.Logger.Debug("connecting to mock data")
 	folder := h.folder
 	if folder == "" {

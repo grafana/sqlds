@@ -1,6 +1,7 @@
 package sqlds
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -19,7 +20,7 @@ type SQLMock struct {
 	folder string
 }
 
-func (h *SQLMock) Settings(config backend.DataSourceInstanceSettings) DriverSettings {
+func (h *SQLMock) Settings(_ context.Context, _ backend.DataSourceInstanceSettings) DriverSettings {
 	return DriverSettings{
 		FillMode: &data.FillMissing{
 			Mode: data.FillModeNull,
@@ -29,7 +30,7 @@ func (h *SQLMock) Settings(config backend.DataSourceInstanceSettings) DriverSett
 }
 
 // Connect opens a sql.DB connection using datasource settings
-func (h *SQLMock) Connect(config backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
+func (h *SQLMock) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
 	backend.Logger.Debug("connecting to mock data")
 	folder := h.folder
 	if folder == "" {
