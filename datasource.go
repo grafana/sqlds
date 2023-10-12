@@ -20,8 +20,8 @@ import (
 const defaultKeySuffix = "default"
 
 var (
-	ErrorMissingMultipleConnectionsConfig = errors.New("received connection arguments but the feature is not enabled")
-	ErrorMissingDBConnection              = errors.New("unable to get default db connection")
+	ErrorMissingMultipleConnectionsConfig = PluginError(errors.New("received connection arguments but the feature is not enabled"))
+	ErrorMissingDBConnection              = PluginError(errors.New("unable to get default db connection"))
 	HeaderKey                             = "grafana-http-headers"
 	// Deprecated: ErrorMissingMultipleConnectionsConfig should be used instead
 	MissingMultipleConnectionsConfig = ErrorMissingMultipleConnectionsConfig
@@ -83,7 +83,7 @@ func getDatasourceUID(settings backend.DataSourceInstanceSettings) string {
 func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	db, err := ds.c.Connect(settings, nil)
 	if err != nil {
-		return nil, err
+		return nil, DownstreamError(err)
 	}
 	key := defaultKey(getDatasourceUID(settings))
 	ds.storeDBConnection(key, dbConnection{db, settings})
@@ -91,7 +91,7 @@ func (ds *SQLDatasource) NewDatasource(settings backend.DataSourceInstanceSettin
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
 	if err != nil {
-		return nil, err
+		return nil, PluginError(err)
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
@@ -130,6 +130,9 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 			if err == nil {
 				if responseMutator, ok := ds.c.(ResponseMutator); ok {
 					frames, err = responseMutator.MutateResponse(ctx, frames)
+					if err != nil {
+						err = PluginError(err)
+					}
 				}
 			}
 			response.Set(query.RefID, backend.DataResponse{
@@ -178,7 +181,7 @@ func (ds *SQLDatasource) getDBConnectionFromQuery(q *Query, datasourceUID string
 
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return "", dbConnection{}, err
+		return "", dbConnection{}, DownstreamError(err)
 	}
 	// Assign this connection in the cache
 	dbConn = dbConnection{db, dbConn.settings}
@@ -238,6 +241,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return res, nil
 	}
 
+	// err = Unwrap(err)
+
 	if errors.Is(err, ErrorNoResults) {
 		return res, nil
 	}
@@ -251,7 +256,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				backend.Logger.Warn(fmt.Sprintf("query failed: %s. Retrying %d times", err.Error(), i))
 				db, err := ds.dbReconnect(dbConn, q, cacheKey)
 				if err != nil {
-					return nil, err
+					return nil, DownstreamError(err)
 				}
 
 				if ds.driverSettings.Pause > 0 {
@@ -295,7 +300,7 @@ func (ds *SQLDatasource) dbReconnect(dbConn dbConnection, q *Query, cacheKey str
 
 	db, err := ds.c.Connect(dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return nil, err
+		return nil, DownstreamError(err)
 	}
 	ds.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 	return db, nil
@@ -306,7 +311,7 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	key := defaultKey(getDatasourceUID(*req.PluginContext.DataSourceInstanceSettings))
 	dbConn, ok := ds.getDBConnection(key)
 	if !ok {
-		return nil, MissingDBConnection
+		return nil, ErrorMissingDBConnection
 	}
 
 	if ds.driverSettings.Retries == 0 {
@@ -361,7 +366,7 @@ func (ds *SQLDatasource) check(conn dbConnection) (*backend.CheckHealthResult, e
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
 			Message: err.Error(),
-		}, err
+		}, DownstreamError(err)
 	}
 
 	return &backend.CheckHealthResult{
