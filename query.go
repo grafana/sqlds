@@ -70,7 +70,7 @@ func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Q
 	model := &Query{}
 
 	if err := json.Unmarshal(query.JSON, &model); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrorJSON, err)
+		return nil, PluginError(fmt.Errorf("%w: %v", ErrorJSON, err))
 	}
 
 	if setHeaders {
@@ -113,8 +113,8 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 		if errors.Is(err, context.Canceled) {
 			errType = context.Canceled
 		}
-
-		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", errType, err.Error())
+		err := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
+		return getErrorFrameFromQuery(query), err
 	}
 
 	// Check for an error response
@@ -122,9 +122,11 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 		if err == sql.ErrNoRows {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
-			return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "No results from query", err)
+			err := DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
+			return getErrorFrameFromQuery(query), err
 		}
-		return getErrorFrameFromQuery(query), fmt.Errorf("%s: %w", "Error response from database", err)
+		err := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
+		return getErrorFrameFromQuery(query), err
 	}
 
 	defer func() {
@@ -136,7 +138,8 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, converters, fillMode, query)
 	if err != nil {
-		return getErrorFrameFromQuery(query), fmt.Errorf("%w: %s", err, "Could not process SQL results")
+		err := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
+		return getErrorFrameFromQuery(query), err
 	}
 
 	return res, nil
