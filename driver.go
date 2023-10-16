@@ -26,9 +26,9 @@ type DriverSettings struct {
 // Plugin creators will need to implement this in order to create a managed datasource
 type Driver interface {
 	// Connect connects to the database. It does not need to call `db.Ping()`
-	Connect(backend.DataSourceInstanceSettings, json.RawMessage) (*sql.DB, error)
+	Connect(context.Context, backend.DataSourceInstanceSettings, json.RawMessage) (*sql.DB, error)
 	// Settings are read whenever the plugin is initialized, or after the data source settings are updated
-	Settings(backend.DataSourceInstanceSettings) DriverSettings
+	Settings(context.Context, backend.DataSourceInstanceSettings) DriverSettings
 	Macros() Macros
 	Converters() []sqlutil.Converter
 }

@@ -16,9 +16,9 @@ if err := datasource.Manage("my-datasource", datasourceFactory, datasource.Manag
   os.Exit(1)
 }
 
-func datasourceFactory(s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+func datasourceFactory(ctx context.Context, s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
   ds := sqlds.NewDatasource(&myDatasource{})
-  return ds.NewDatasource(s)
+  return ds.NewDatasource(ctx, s)
 }
 ```
 
