@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/grafana/sqlds/v2"
-	"github.com/grafana/sqlds/v2/mock"
+	"github.com/grafana/sqlds/v3"
+	"github.com/grafana/sqlds/v3/mock"
 )
 
 var registered = map[string]*SqlHandler{}
