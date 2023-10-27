@@ -224,6 +224,60 @@ func Test_error_retries(t *testing.T) {
 
 }
 
+func Test_error_source(t *testing.T) {
+	testCounter = 0
+	dsUID := "error"
+	settings := backend.DataSourceInstanceSettings{UID: dsUID}
+
+	handler := &testSqlHandler{
+		error: errors.New("foo"),
+	}
+	mockDriver := "sqlmock-error-source"
+	mock.RegisterDriver(mockDriver, handler)
+
+	errorDriver := fakeDriver{
+		openDBfn: func(msg json.RawMessage) (*sql.DB, error) {
+			db, err := sql.Open(mockDriver, "")
+			if err != nil {
+				t.Errorf("failed to connect to mock driver: %v", err)
+			}
+			return db, errors.New("foo")
+		},
+	}
+	retries := 0
+	max := time.Duration(10) * time.Second
+	driverSettings := DriverSettings{Retries: retries, Timeout: max, Pause: 1, RetryOn: []string{"foo"}}
+	ds := &SQLDatasource{c: errorDriver, driverSettings: driverSettings}
+
+	key := defaultKey(dsUID)
+	// Add the mandatory default db
+	db, _ := errorDriver.Connect(context.Background(), settings, nil)
+	ds.storeDBConnection(key, dbConnection{db, settings})
+	ctx := context.Background()
+
+	qry := `{ "rawSql": "foo" }`
+
+	req := &backend.QueryDataRequest{
+		PluginContext: backend.PluginContext{
+			DataSourceInstanceSettings: &settings,
+		},
+		Queries: []backend.DataQuery{
+			{
+				RefID: "foo",
+				JSON:  []byte(qry),
+			},
+		},
+	}
+
+	data, err := ds.QueryData(ctx, req)
+	assert.Nil(t, err)
+	assert.NotNil(t, data.Responses)
+
+	res := data.Responses["foo"]
+	assert.NotNil(t, res.Error)
+	assert.Equal(t, backend.ErrorSourceDownstream, res.ErrorSource)
+}
+
 func Test_query_apply_headers(t *testing.T) {
 	testCounter = 0
 	dsUID := "headers"
