@@ -79,7 +79,7 @@ func Test_check_health_with_headers(t *testing.T) {
 		OnConnect:        onConnect,
 	}
 	cfg := `{ "timeout": 0, "retries": 2, "retryOn": ["missing token"], "forwardHeaders": true }`
-	req, handler, ds := healthRequest(t, "timeout", opts, cfg)
+	req, handler, ds := healthRequest(t, "health-headers", opts, cfg)
 	r := &req
 	r.SetHTTPHeader("foo", "bar")
 
