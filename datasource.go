@@ -135,9 +135,11 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 					}
 				}
 			}
+
 			response.Set(query.RefID, backend.DataResponse{
-				Frames: frames,
-				Error:  err,
+				Frames:      frames,
+				Error:       err,
+				ErrorSource: ErrorSource(err),
 			})
 
 			wg.Done()
@@ -240,8 +242,6 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	if err == nil {
 		return res, nil
 	}
-
-	// err = Unwrap(err)
 
 	if errors.Is(err, ErrorNoResults) {
 		return res, nil

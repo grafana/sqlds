@@ -3,6 +3,7 @@ package sqlds
 import (
 	"errors"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	es "github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
 )
 
@@ -25,4 +26,12 @@ func PluginError(err error, override ...bool) error {
 
 func DownstreamError(err error, override ...bool) error {
 	return es.DownstreamError(err, len(override) > 0)
+}
+
+func ErrorSource(err error) backend.ErrorSource {
+	var se es.Error
+	if errors.As(err, &se) {
+		return se.Source()
+	}
+	return backend.ErrorSourcePlugin
 }

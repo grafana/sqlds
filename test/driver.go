@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
+	"fmt"
 	"io"
 	"reflect"
 	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/grafana/sqlds/v3"
 	"github.com/grafana/sqlds/v3/mock"
@@ -24,7 +27,10 @@ func NewDriver(name string, dbdata Data, converters []sqlutil.Converter, opts Dr
 	}
 
 	return NewTestDS(
-		func() (*sql.DB, error) {
+		func(msg json.RawMessage) (*sql.DB, error) {
+			if opts.OnConnect != nil {
+				opts.OnConnect(msg)
+			}
 			return sql.Open(name, "")
 		},
 		converters,
@@ -32,7 +38,7 @@ func NewDriver(name string, dbdata Data, converters []sqlutil.Converter, opts Dr
 }
 
 // NewTestDS creates a new test datasource driver
-func NewTestDS(openDBfn func() (*sql.DB, error), converters []sqlutil.Converter) TestDS {
+func NewTestDS(openDBfn func(msg json.RawMessage) (*sql.DB, error), converters []sqlutil.Converter) TestDS {
 	return TestDS{
 		openDBfn:   openDBfn,
 		converters: converters,
@@ -62,7 +68,7 @@ func (s *SqlHandler) Ping(ctx context.Context) error {
 	if s.Opts.ConnectDelay > 0 {
 		time.Sleep(time.Duration(s.Opts.ConnectDelay * int(time.Second))) // simulate a connection delay
 	}
-	if s.Opts.ConnectError != nil {
+	if s.Opts.ConnectError != nil && (s.Opts.ConnectFailTimes == 0 || s.State.ConnectAttempts <= s.Opts.ConnectFailTimes) {
 		return s.Opts.ConnectError
 	}
 	return nil
@@ -138,27 +144,62 @@ type Column struct {
 
 // TestDS ...
 type TestDS struct {
-	openDBfn   func() (*sql.DB, error)
+	openDBfn   func(msg json.RawMessage) (*sql.DB, error)
 	converters []sqlutil.Converter
 	sqlds.Driver
 }
 
 // Open - opens the test database
 func (s TestDS) Open() (*sql.DB, error) {
-	return s.openDBfn()
+	return s.openDBfn(nil)
+}
+
+// Connect - connects to the test database
+func (s TestDS) Connect(ctx context.Context, cfg backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
+	return s.openDBfn(msg)
+}
+
+// Settings - Settings to the test database
+func (s TestDS) Settings(ctx context.Context, config backend.DataSourceInstanceSettings) sqlds.DriverSettings {
+	settings, err := LoadSettings(ctx, config)
+	if err != nil {
+		fmt.Println("error loading settings")
+		return sqlds.DriverSettings{}
+	}
+	return settings
+}
+
+// Macros - Macros for the test database
+func (s TestDS) Macros() sqlds.Macros {
+	return sqlds.DefaultMacros
+}
+
+// Converters - Converters for the test database
+func (s TestDS) Converters() []sqlutil.Converter {
+	return nil
 }
 
 // DriverOpts the optional settings
 type DriverOpts struct {
-	ConnectDelay   int
-	QueryDelay     int
-	ConnectError   error
-	QueryError     error
-	QueryFailTimes int
+	ConnectDelay     int
+	ConnectError     error
+	ConnectFailTimes int
+	OnConnect        func(msg []byte)
+	QueryDelay       int
+	QueryError       error
+	QueryFailTimes   int
 }
 
 // State is the state of the connections/queries
 type State struct {
 	QueryAttempts   int
 	ConnectAttempts int
+}
+
+// LoadSettings will read and validate Settings from the DataSourceConfig
+func LoadSettings(ctx context.Context, config backend.DataSourceInstanceSettings) (settings sqlds.DriverSettings, err error) {
+	if err := json.Unmarshal(config.JSONData, &settings); err != nil {
+		return settings, fmt.Errorf("%s: %s", err.Error(), "Invalid Settings")
+	}
+	return settings, nil
 }
