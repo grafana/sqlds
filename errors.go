@@ -28,8 +28,6 @@ func DownstreamError(err error, override ...bool) error {
 	return es.DownstreamError(err, len(override) > 0)
 }
 
-type Error es.Error
-
 func ErrorSource(err error) backend.ErrorSource {
 	var se es.Error
 	if errors.As(err, &se) {
