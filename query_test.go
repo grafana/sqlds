@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -102,5 +104,31 @@ func TestQuery_Timeout(t *testing.T) {
 		if !errors.Is(err, ErrorQuery) {
 			t.Fatal("expected function to complete, received error: ", err)
 		}
+	})
+}
+
+func TestFixFrameForLongToMulti(t *testing.T) {
+	t.Run("fix time", func(t *testing.T) {
+		time1 := time.UnixMilli(1)
+		time2 := time.UnixMilli(2)
+		frame := data.NewFrame("",
+			data.NewField("time", nil, []*time.Time{&time1, &time2}),
+			data.NewField("host", nil, []string{"a", "b"}),
+			data.NewField("iface", nil, []string{"eth0", "eth0"}),
+			data.NewField("in_bytes", nil, []float64{1, 2}),
+			data.NewField("out_bytes", nil, []int64{3, 4}),
+		)
+		frame.Meta = &data.FrameMeta{}
+
+		err := fixFrameForLongToMulti(frame)
+		require.NoError(t, err)
+
+		require.Equal(t, frame.Fields[0].Type(), data.FieldTypeTime)
+		require.Equal(t, frame.Fields[0].Len(), 2)
+		require.Equal(t, frame.Fields[0].At(0).(time.Time), time1)
+		require.Equal(t, frame.Fields[0].At(1).(time.Time), time2)
+
+		require.Equal(t, frame.Meta.Type, data.FrameTypeTimeSeriesLong)
+		require.Equal(t, frame.Meta.TypeVersion, data.FrameTypeVersion{0, 1})
 	})
 }

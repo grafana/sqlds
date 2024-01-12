@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/grafana/dataplane/sdata/timeseries"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
@@ -18,14 +20,16 @@ import (
 type FormatQueryOption uint32
 
 const (
-	// FormatOptionTimeSeries formats the query results as a timeseries using "WideToLong"
+	// FormatOptionTimeSeries formats the query results as a timeseries using "LongToWide"
 	FormatOptionTimeSeries FormatQueryOption = iota
-	// FormatOptionTable formats the query results as a table using "LongToWide"
+	// FormatOptionTable sets the preferred visualization to table
 	FormatOptionTable
 	// FormatOptionLogs sets the preferred visualization to logs
 	FormatOptionLogs
 	// FormatOptionsTrace sets the preferred visualization to trace
 	FormatOptionTrace
+	// FormatOptionMulti formats the query results as a timeseries using "LongToMulti"
+	FormatOptionMulti
 )
 
 // Query is the model that represents the query that users submit from the panel / queryeditor.
@@ -158,40 +162,78 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	frame.Meta.ExecutedQueryString = query.RawSQL
 	frame.Meta.PreferredVisualization = data.VisTypeGraph
 
-	if query.Format == FormatOptionTable {
-		frame.Meta.PreferredVisualization = data.VisTypeTable
-		return data.Frames{frame}, nil
-	}
-
-	if query.Format == FormatOptionLogs {
-		frame.Meta.PreferredVisualization = data.VisTypeLogs
-		return data.Frames{frame}, nil
-	}
-
-	if query.Format == FormatOptionTrace {
-		frame.Meta.PreferredVisualization = data.VisTypeTrace
-		return data.Frames{frame}, nil
-	}
-
 	count, err := frame.RowLen()
-
 	if err != nil {
 		return nil, err
 	}
-
 	if count == 0 {
 		return nil, ErrorNoResults
 	}
 
-	if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
-		frame, err := data.LongToWide(frame, fillMode)
-		if err != nil {
-			return nil, err
-		}
+	switch query.Format {
+	case FormatOptionTable:
+		frame.Meta.PreferredVisualization = data.VisTypeTable
 		return data.Frames{frame}, nil
+	case FormatOptionLogs:
+		frame.Meta.PreferredVisualization = data.VisTypeLogs
+		return data.Frames{frame}, nil
+	case FormatOptionTrace:
+		frame.Meta.PreferredVisualization = data.VisTypeTrace
+		return data.Frames{frame}, nil
+	case FormatOptionMulti:
+		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
+
+			err = fixFrameForLongToMulti(frame)
+			if err != nil {
+				return nil, err
+			}
+
+			frames, err := timeseries.LongToMulti(&timeseries.LongFrame{frame})
+			if err != nil {
+				return nil, err
+			}
+			return frames.Frames(), nil
+		}
+	// Format as timeSeries
+	default:
+		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
+			frame, err := data.LongToWide(frame, fillMode)
+			if err != nil {
+				return nil, err
+			}
+			return data.Frames{frame}, nil
+		}
+	}
+	return data.Frames{frame}, nil
+}
+
+// fixFrameForLongToMulti edits the passed in frame so that it's first time field isn't nullable and has the correct meta
+func fixFrameForLongToMulti(frame *data.Frame) error {
+	timeFields := frame.TypeIndices(data.FieldTypeTime, data.FieldTypeNullableTime)
+	if len(timeFields) == 0 {
+		return fmt.Errorf("can not convert to wide series, input is missing a time field")
 	}
 
-	return data.Frames{frame}, nil
+	// the timeseries package expects the first time field in the frame to be non-nullable and ignores the rest
+	timeField := frame.Fields[timeFields[0]]
+	if timeField.Type() == data.FieldTypeNullableTime {
+		newValues := []time.Time{}
+		for i := 0; i < timeField.Len(); i++ {
+			val, ok := timeField.ConcreteAt(i)
+			if !ok {
+				return fmt.Errorf("can not convert to wide series, input has null time values")
+			}
+			newValues = append(newValues, val.(time.Time))
+		}
+		newField := data.NewField(timeField.Name, timeField.Labels, newValues)
+		newField.Config = timeField.Config
+		frame.Fields[timeFields[0]] = newField
+
+		// LongToMulti requires the meta to be set for the frame
+		frame.Meta.Type = data.FrameTypeTimeSeriesLong
+		frame.Meta.TypeVersion = data.FrameTypeVersion{0, 1}
+	}
+	return nil
 }
 
 func applyHeaders(query *Query, headers http.Header) *Query {
