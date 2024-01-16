@@ -67,6 +67,6 @@ func (h *SQLMock) Converters() []sqlutil.Converter {
 }
 
 // Macros returns list of macro functions convert the macros of raw query
-func (h *SQLMock) Macros() Macros {
-	return Macros{}
+func (h *SQLMock) Macros() sqlutil.Macros {
+	return sqlutil.Macros{}
 }

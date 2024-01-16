@@ -170,8 +170,8 @@ func (s TestDS) Settings(ctx context.Context, config backend.DataSourceInstanceS
 }
 
 // Macros - Macros for the test database
-func (s TestDS) Macros() sqlds.Macros {
-	return sqlds.DefaultMacros
+func (s TestDS) Macros() sqlutil.Macros {
+	return sqlutil.DefaultMacros
 }
 
 // Converters - Converters for the test database

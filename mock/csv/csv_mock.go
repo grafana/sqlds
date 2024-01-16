@@ -91,6 +91,6 @@ func (h *SQLCSVMock) Converters() []sqlutil.Converter {
 }
 
 // Macros returns list of macro functions convert the macros of raw query
-func (h *SQLCSVMock) Macros() sqlds.Macros {
-	return sqlds.Macros{}
+func (h *SQLCSVMock) Macros() sqlutil.Macros {
+	return sqlutil.Macros{}
 }

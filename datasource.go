@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 )
 
 const defaultKeySuffix = "default"
@@ -156,12 +157,12 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	return response.Response(), nil
 }
 
-func (ds *SQLDatasource) GetDBFromQuery(ctx context.Context, q *Query, datasourceUID string) (*sql.DB, error) {
+func (ds *SQLDatasource) GetDBFromQuery(ctx context.Context, q *sqlutil.Query, datasourceUID string) (*sql.DB, error) {
 	_, dbConn, err := ds.getDBConnectionFromQuery(ctx, q, datasourceUID)
 	return dbConn.db, err
 }
 
-func (ds *SQLDatasource) getDBConnectionFromQuery(ctx context.Context, q *Query, datasourceUID string) (string, dbConnection, error) {
+func (ds *SQLDatasource) getDBConnectionFromQuery(ctx context.Context, q *sqlutil.Query, datasourceUID string) (string, dbConnection, error) {
 	if !ds.EnableMultipleConnections && !ds.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
@@ -199,18 +200,26 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Convert the backend.DataQuery into a Query object
-	q, err := GetQuery(req, headers, ds.driverSettings.ForwardHeaders)
+	q, err := sqlutil.GetQuery(req)
+	//q, err := GetQuery(req, headers, ds.driverSettings.ForwardHeaders)
 	if err != nil {
 		return nil, err
 	}
+	if ds.driverSettings.ForwardHeaders {
+		err = applyHeaders(q, headers)
+		if err != nil {
+			// TODO: should this error be returned?
+			backend.Logger.Warn(err.Error())
+		}
+	}
 
 	// Apply supported macros to the query
-	q.RawSQL, err = Interpolate(ds.c, q)
+	q.RawSQL, err = sqlutil.Interpolate(q, ds.c.Macros())
 	if err != nil {
 		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
 	}
 
-	// Apply the default FillMode, overwritting it if the query specifies it
+	// Apply the default FillMode, overwriting it if the query specifies it
 	fillMode := ds.driverSettings.FillMode
 	if q.FillMissing != nil {
 		fillMode = q.FillMissing
@@ -293,7 +302,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	return nil, err
 }
 
-func (ds *SQLDatasource) dbReconnect(ctx context.Context, dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
+func (ds *SQLDatasource) dbReconnect(ctx context.Context, dbConn dbConnection, q *sqlutil.Query, cacheKey string) (*sql.DB, error) {
 	if err := dbConn.db.Close(); err != nil {
 		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
 	}
@@ -328,9 +337,13 @@ func (ds *SQLDatasource) DriverSettings() DriverSettings {
 func (ds *SQLDatasource) checkWithRetries(ctx context.Context, conn dbConnection, key string, headers http.Header) (*backend.CheckHealthResult, error) {
 	var result *backend.CheckHealthResult
 
-	q := &Query{}
+	q := &sqlutil.Query{}
 	if ds.driverSettings.ForwardHeaders {
-		applyHeaders(q, headers)
+		err := applyHeaders(q, headers)
+		if err != nil {
+			// TODO: maybe do something with this error?
+			backend.Logger.Warn(err.Error())
+		}
 	}
 
 	for i := 0; i < ds.driverSettings.Retries; i++ {

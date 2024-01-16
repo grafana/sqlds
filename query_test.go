@@ -75,7 +75,7 @@ func TestQuery_Timeout(t *testing.T) {
 
 		defer conn.Close()
 
-		_, err := QueryDB(ctx, conn, []sqlutil.Converter{}, nil, &Query{})
+		_, err := QueryDB(ctx, conn, []sqlutil.Converter{}, nil, &sqlutil.Query{})
 
 		if !errors.Is(err, context.Canceled) {
 			t.Fatal("expected error to be context.Canceled, received", err)
@@ -97,7 +97,7 @@ func TestQuery_Timeout(t *testing.T) {
 
 		defer conn.Close()
 
-		_, err := QueryDB(ctx, conn, []sqlutil.Converter{}, nil, &Query{})
+		_, err := QueryDB(ctx, conn, []sqlutil.Converter{}, nil, &sqlutil.Query{})
 
 		if !errors.Is(err, ErrorQuery) {
 			t.Fatal("expected function to complete, received error: ", err)

@@ -21,8 +21,8 @@ func (d fakeDriver) Connect(_ context.Context, _ backend.DataSourceInstanceSetti
 	return d.openDBfn(msg)
 }
 
-func (d fakeDriver) Macros() Macros {
-	return Macros{}
+func (d fakeDriver) Macros() sqlutil.Macros {
+	return sqlutil.Macros{}
 }
 
 func (d fakeDriver) Converters() []sqlutil.Converter {
@@ -77,7 +77,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 				ds.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
-			key, dbConn, err := ds.getDBConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
+			key, dbConn, err := ds.getDBConnectionFromQuery(context.Background(), &sqlutil.Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -92,7 +92,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
 		ds := &SQLDatasource{c: d, EnableMultipleConnections: false}
-		_, _, err := ds.getDBConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(context.Background(), &sqlutil.Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
 		}
@@ -100,7 +100,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
 		ds := &SQLDatasource{c: d}
-		_, _, err := ds.getDBConnectionFromQuery(context.Background(), &Query{}, "dsUID")
+		_, _, err := ds.getDBConnectionFromQuery(context.Background(), &sqlutil.Query{}, "dsUID")
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
 		}

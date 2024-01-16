@@ -71,7 +71,7 @@ func TestQuery_MySQL(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 
-		q := &Query{
+		q := &sqlutil.Query{
 			RawSQL: "SELECT SLEEP(5)",
 		}
 
