@@ -201,7 +201,6 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 	// Convert the backend.DataQuery into a Query object
 	q, err := sqlutil.GetQuery(req)
-	//q, err := GetQuery(req, headers, ds.driverSettings.ForwardHeaders)
 	if err != nil {
 		return nil, err
 	}
