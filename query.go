@@ -10,102 +10,45 @@ import (
 	"time"
 
 	"github.com/grafana/dataplane/sdata/timeseries"
-
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
-type FormatQueryOption uint32
+// Deprecated: use sqlutil.FormatQueryOption directly instead
+type FormatQueryOption = sqlutil.FormatQueryOption
 
+// Deprecated: use the values in sqlutil directly instead
 const (
 	// FormatOptionTimeSeries formats the query results as a timeseries using "LongToWide"
-	FormatOptionTimeSeries FormatQueryOption = iota
-	// FormatOptionTable sets the preferred visualization to table
-	FormatOptionTable
+	FormatOptionTimeSeries = sqlutil.FormatOptionTimeSeries
+	// FormatOptionTable formats the query results as a table using "LongToWide"
+	FormatOptionTable = sqlutil.FormatOptionTable
 	// FormatOptionLogs sets the preferred visualization to logs
-	FormatOptionLogs
+	FormatOptionLogs = sqlutil.FormatOptionLogs
 	// FormatOptionsTrace sets the preferred visualization to trace
-	FormatOptionTrace
+	FormatOptionTrace = sqlutil.FormatOptionTrace
 	// FormatOptionMulti formats the query results as a timeseries using "LongToMulti"
-	FormatOptionMulti
+	FormatOptionMulti = sqlutil.FormatOptionMulti
 )
 
-// Query is the model that represents the query that users submit from the panel / queryeditor.
-// For the sake of backwards compatibility, when making changes to this type, ensure that changes are
-// only additive.
-type Query struct {
-	RawSQL         string            `json:"rawSql"`
-	Format         FormatQueryOption `json:"format"`
-	ConnectionArgs json.RawMessage   `json:"connectionArgs"`
+// Deprecated: use sqlutil.Query directly instead
+type Query = sqlutil.Query
 
-	RefID         string            `json:"-"`
-	Interval      time.Duration     `json:"-"`
-	TimeRange     backend.TimeRange `json:"-"`
-	MaxDataPoints int64             `json:"-"`
-	FillMissing   *data.FillMissing `json:"fillMode,omitempty"`
-
-	// Macros
-	Schema string `json:"schema,omitempty"`
-	Table  string `json:"table,omitempty"`
-	Column string `json:"column,omitempty"`
-}
-
-// WithSQL copies the Query, but with a different RawSQL value.
-// This is mostly useful in the Interpolate function, where the RawSQL value is modified in a loop
-func (q *Query) WithSQL(query string) *Query {
-	return &Query{
-		RawSQL:         query,
-		ConnectionArgs: q.ConnectionArgs,
-		RefID:          q.RefID,
-		Interval:       q.Interval,
-		TimeRange:      q.TimeRange,
-		MaxDataPoints:  q.MaxDataPoints,
-		FillMissing:    q.FillMissing,
-		Schema:         q.Schema,
-		Table:          q.Table,
-		Column:         q.Column,
-	}
-}
-
-// GetQuery returns a Query object given a backend.DataQuery using json.Unmarshal
+// GetQuery wraps sqlutil's GetQuery to add headers if needed
 func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
-	model := &Query{}
+	model, err := sqlutil.GetQuery(query)
 
-	if err := json.Unmarshal(query.JSON, &model); err != nil {
-		return nil, PluginError(fmt.Errorf("%w: %v", ErrorJSON, err))
+	if err != nil {
+		return nil, PluginError(err)
 	}
 
 	if setHeaders {
 		applyHeaders(model, headers)
 	}
 
-	// Copy directly from the well typed query
-	return &Query{
-		RawSQL:         model.RawSQL,
-		Format:         model.Format,
-		ConnectionArgs: model.ConnectionArgs,
-		RefID:          query.RefID,
-		Interval:       query.Interval,
-		TimeRange:      query.TimeRange,
-		MaxDataPoints:  query.MaxDataPoints,
-		FillMissing:    model.FillMissing,
-		Schema:         model.Schema,
-		Table:          model.Table,
-		Column:         model.Column,
-	}, nil
-}
-
-// getErrorFrameFromQuery returns a error frames with empty data and meta fields
-func getErrorFrameFromQuery(query *Query) data.Frames {
-	frames := data.Frames{}
-	frame := data.NewFrame(query.RefID)
-	frame.Meta = &data.FrameMeta{
-		ExecutedQueryString: query.RawSQL,
-	}
-	frames = append(frames, frame)
-	return frames
+	return model, nil
 }
 
 // QueryDB sends the query to the connection and converts the rows to a dataframe.
@@ -118,19 +61,19 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 			errType = context.Canceled
 		}
 		err := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
-		return getErrorFrameFromQuery(query), err
+		return sqlutil.ErrorFrameFromQuery(query), err
 	}
 
 	// Check for an error response
 	if err := rows.Err(); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
 			err := DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
-			return getErrorFrameFromQuery(query), err
+			return sqlutil.ErrorFrameFromQuery(query), err
 		}
 		err := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
-		return getErrorFrameFromQuery(query), err
+		return sqlutil.ErrorFrameFromQuery(query), err
 	}
 
 	defer func() {
@@ -143,7 +86,7 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 	res, err := getFrames(rows, -1, converters, fillMode, query)
 	if err != nil {
 		err := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
-		return getErrorFrameFromQuery(query), err
+		return sqlutil.ErrorFrameFromQuery(query), err
 	}
 
 	return res, nil
