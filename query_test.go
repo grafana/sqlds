@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -118,7 +119,6 @@ func TestFixFrameForLongToMulti(t *testing.T) {
 			data.NewField("in_bytes", nil, []float64{1, 2}),
 			data.NewField("out_bytes", nil, []int64{3, 4}),
 		)
-		frame.Meta = &data.FrameMeta{}
 
 		err := fixFrameForLongToMulti(frame)
 		require.NoError(t, err)
@@ -130,5 +130,25 @@ func TestFixFrameForLongToMulti(t *testing.T) {
 
 		require.Equal(t, frame.Meta.Type, data.FrameTypeTimeSeriesLong)
 		require.Equal(t, frame.Meta.TypeVersion, data.FrameTypeVersion{0, 1})
+	})
+	t.Run("errors for null time", func(t *testing.T) {
+		time1 := time.UnixMilli(1)
+		frame := data.NewFrame("",
+			data.NewField("time", nil, []*time.Time{&time1, nil}),
+			data.NewField("host", nil, []string{"a", "b"}),
+			data.NewField("in_bytes", nil, []float64{1, 2}),
+		)
+
+		err := fixFrameForLongToMulti(frame)
+		require.Equal(t, err, fmt.Errorf("can not convert to wide series, input has null time values"))
+	})
+	t.Run("error for no time", func(t *testing.T) {
+		frame := data.NewFrame("",
+			data.NewField("host", nil, []string{"a", "b"}),
+			data.NewField("in_bytes", nil, []float64{1, 2}),
+		)
+
+		err := fixFrameForLongToMulti(frame)
+		require.Equal(t, err, fmt.Errorf("can not convert to wide series, input is missing a time field"))
 	})
 }
