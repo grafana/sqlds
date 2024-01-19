@@ -171,15 +171,6 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	}
 
 	switch query.Format {
-	case FormatOptionTable:
-		frame.Meta.PreferredVisualization = data.VisTypeTable
-		return data.Frames{frame}, nil
-	case FormatOptionLogs:
-		frame.Meta.PreferredVisualization = data.VisTypeLogs
-		return data.Frames{frame}, nil
-	case FormatOptionTrace:
-		frame.Meta.PreferredVisualization = data.VisTypeTrace
-		return data.Frames{frame}, nil
 	case FormatOptionMulti:
 		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
 
@@ -194,14 +185,19 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 			}
 			return frames.Frames(), nil
 		}
+	case FormatOptionTable:
+		frame.Meta.PreferredVisualization = data.VisTypeTable
+	case FormatOptionLogs:
+		frame.Meta.PreferredVisualization = data.VisTypeLogs
+	case FormatOptionTrace:
+		frame.Meta.PreferredVisualization = data.VisTypeTrace
 	// Format as timeSeries
 	default:
 		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
-			frame, err := data.LongToWide(frame, fillMode)
+			frame, err = data.LongToWide(frame, fillMode)
 			if err != nil {
 				return nil, err
 			}
-			return data.Frames{frame}, nil
 		}
 	}
 	return data.Frames{frame}, nil
