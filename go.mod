@@ -7,6 +7,7 @@ toolchain go1.21.1
 require (
 	github.com/go-sql-driver/mysql v1.4.0
 	github.com/google/go-cmp v0.5.9
+	github.com/grafana/dataplane/sdata v0.0.7
 	github.com/grafana/grafana-plugin-sdk-go v0.188.3
 	github.com/mithrandie/csvq-driver v1.6.8
 	github.com/stretchr/testify v1.8.4
