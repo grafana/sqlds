@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"net/http"
 	"strings"
 	"sync"
@@ -207,7 +208,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// Apply supported macros to the query
 	q.RawSQL, err = Interpolate(ds.c, q)
 	if err != nil {
-		return getErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
+		return sqlutil.ErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
 	}
 
 	// Apply the default FillMode, overwritting it if the query specifies it
@@ -219,7 +220,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// Retrieve the database connection
 	cacheKey, dbConn, err := ds.getDBConnectionFromQuery(ctx, q, datasourceUID)
 	if err != nil {
-		return getErrorFrameFromQuery(q), err
+		return sqlutil.ErrorFrameFromQuery(q), err
 	}
 
 	if ds.driverSettings.Timeout != 0 {
