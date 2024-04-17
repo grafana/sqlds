@@ -121,6 +121,7 @@ func (ds *SQLDatasource) Dispose() {
 			}
 			return true
 		})
+		backend.Logger.Debug(fmt.Sprintf("Disposing %d connections", len(connections)))
 		for _, conn := range connections {
 			if err := conn.db.Close(); err != nil {
 				backend.Logger.Warn(fmt.Sprintf("closing connection failed: %s", err.Error()))
