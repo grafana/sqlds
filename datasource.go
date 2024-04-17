@@ -113,8 +113,7 @@ func NewDatasource(c Driver) *SQLDatasource {
 // Note: Called when testing and saving a datasource
 func (ds *SQLDatasource) Dispose() {
 	if disposer, ok := ds.c.(Disposer); ok {
-		shouldDispose := disposer.Dispose()
-		if shouldDispose {
+		if disposer.Dispose() {
 			var connections []dbConnection
 			ds.dbConnections.Range(func(key, value any) bool {
 				connection, ok := value.(dbConnection)
