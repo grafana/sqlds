@@ -20,6 +20,7 @@ type DriverSettings struct {
 	RetryOn        []string
 	ForwardHeaders bool
 	Errors         bool
+	Dispose        bool
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
@@ -58,10 +59,4 @@ type QueryArgSetter interface {
 // This adds ability to the driver, so it can mutate a response from the driver before its returned to the client.
 type ResponseMutator interface {
 	MutateResponse(ctx context.Context, res data.Frames) (data.Frames, error)
-}
-
-// Disposer is an additional interface that could be implemented by driver.
-// This adds ability to clean up resources.
-type Disposer interface {
-	Dispose() bool
 }

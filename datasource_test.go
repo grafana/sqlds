@@ -100,7 +100,7 @@ func Test_no_errors(t *testing.T) {
 }
 
 func TestDispose(t *testing.T) {
-	req, _, ds := healthRequest(t, "pass", test.DriverOpts{Dispose: true}, "{}")
+	req, _, ds := healthRequest(t, "pass", test.DriverOpts{}, `{ "dispose": true} `)
 	_, err := ds.CheckHealth(context.Background(), &req)
 	assert.Nil(t, err)
 

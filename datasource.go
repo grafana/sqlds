@@ -112,23 +112,21 @@ func NewDatasource(c Driver) *SQLDatasource {
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
 func (ds *SQLDatasource) Dispose() {
-	if disposer, ok := ds.c.(Disposer); ok {
-		if disposer.Dispose() {
-			var connections []dbConnection
-			ds.dbConnections.Range(func(key, value any) bool {
-				connection, ok := value.(dbConnection)
-				if ok {
-					connections = append(connections, connection)
-				}
-				return true
-			})
-			for _, conn := range connections {
-				if err := conn.db.Close(); err != nil {
-					backend.Logger.Warn(fmt.Sprintf("closing connection failed: %s", err.Error()))
-				}
-				k := defaultKey(getDatasourceUID(conn.settings))
-				ds.dbConnections.Delete(k)
+	if ds.driverSettings.Dispose {
+		var connections []dbConnection
+		ds.dbConnections.Range(func(key, value any) bool {
+			connection, ok := value.(dbConnection)
+			if ok {
+				connections = append(connections, connection)
 			}
+			return true
+		})
+		for _, conn := range connections {
+			if err := conn.db.Close(); err != nil {
+				backend.Logger.Warn(fmt.Sprintf("closing connection failed: %s", err.Error()))
+			}
+			k := defaultKey(getDatasourceUID(conn.settings))
+			ds.dbConnections.Delete(k)
 		}
 	}
 }

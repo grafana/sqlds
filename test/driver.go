@@ -34,16 +34,14 @@ func NewDriver(name string, dbdata Data, converters []sqlutil.Converter, opts Dr
 			return sql.Open(name, "")
 		},
 		converters,
-		opts.Dispose,
 	), registered[name]
 }
 
 // NewTestDS creates a new test datasource driver
-func NewTestDS(openDBfn func(msg json.RawMessage) (*sql.DB, error), converters []sqlutil.Converter, dispose bool) TestDS {
+func NewTestDS(openDBfn func(msg json.RawMessage) (*sql.DB, error), converters []sqlutil.Converter) TestDS {
 	return TestDS{
 		openDBfn:   openDBfn,
 		converters: converters,
-		dispose:    dispose,
 	}
 }
 
@@ -149,7 +147,6 @@ type TestDS struct {
 	openDBfn   func(msg json.RawMessage) (*sql.DB, error)
 	converters []sqlutil.Converter
 	sqlds.Driver
-	dispose bool
 }
 
 // Open - opens the test database
@@ -182,10 +179,6 @@ func (s TestDS) Converters() []sqlutil.Converter {
 	return nil
 }
 
-func (s TestDS) Dispose() bool {
-	return s.dispose
-}
-
 // DriverOpts the optional settings
 type DriverOpts struct {
 	ConnectDelay     int
@@ -195,7 +188,6 @@ type DriverOpts struct {
 	QueryDelay       int
 	QueryError       error
 	QueryFailTimes   int
-	Dispose          bool
 }
 
 // State is the state of the connections/queries
