@@ -99,6 +99,17 @@ func Test_no_errors(t *testing.T) {
 	assert.Equal(t, expected, result.Message)
 }
 
+func TestDispose(t *testing.T) {
+	req, _, ds := healthRequest(t, "pass", test.DriverOpts{Dispose: true}, "{}")
+	_, err := ds.CheckHealth(context.Background(), &req)
+	assert.Nil(t, err)
+
+	ds.Dispose()
+
+	_, err = ds.CheckHealth(context.Background(), &req)
+	assert.NotNil(t, err)
+}
+
 func queryRequest(t *testing.T, name string, opts test.DriverOpts, cfg string) (*backend.QueryDataRequest, *test.SqlHandler, *sqlds.SQLDatasource) {
 	driver, handler := test.NewDriver(name, test.Data{}, nil, opts)
 	ds := sqlds.NewDatasource(driver)

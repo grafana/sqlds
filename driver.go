@@ -59,3 +59,9 @@ type QueryArgSetter interface {
 type ResponseMutator interface {
 	MutateResponse(ctx context.Context, res data.Frames) (data.Frames, error)
 }
+
+// Disposer is an additional interface that could be implemented by driver.
+// This adds ability to clean up resources.
+type Disposer interface {
+	Dispose() bool
+}

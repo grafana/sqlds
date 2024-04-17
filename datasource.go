@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -111,6 +112,26 @@ func NewDatasource(c Driver) *SQLDatasource {
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
 func (ds *SQLDatasource) Dispose() {
+	if disposer, ok := ds.c.(Disposer); ok {
+		shouldDispose := disposer.Dispose()
+		if shouldDispose {
+			var connections []dbConnection
+			ds.dbConnections.Range(func(key, value any) bool {
+				connection, ok := value.(dbConnection)
+				if ok {
+					connections = append(connections, connection)
+				}
+				return true
+			})
+			for _, conn := range connections {
+				if err := conn.db.Close(); err != nil {
+					backend.Logger.Warn(fmt.Sprintf("closing connection failed: %s", err.Error()))
+				}
+				k := defaultKey(getDatasourceUID(conn.settings))
+				ds.dbConnections.Delete(k)
+			}
+		}
+	}
 }
 
 // QueryData creates the Responses list and executes each query
