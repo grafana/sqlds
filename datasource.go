@@ -169,6 +169,12 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	wg.Wait()
 
 	errs := ds.errors(response)
+
+	// Dispose after alerts and other non-user queries
+	if req.PluginContext.User == nil && ds.driverSettings.Dispose {
+		ds.Dispose()
+	}
+
 	if ds.driverSettings.Errors {
 		return response.Response(), errs
 	}
