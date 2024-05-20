@@ -266,8 +266,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 					time.Sleep(time.Duration(ds.driverSettings.Pause * int(time.Second)))
 				}
 
-				sqlQuery := NewQuery(db, dbConn.settings, ds.c.Converters(), fillMode)
-				res, err = sqlQuery.Run(ctx, q, args...)
+				dbQuery := NewQuery(db, dbConn.settings, ds.c.Converters(), fillMode)
+				res, err = dbQuery.Run(ctx, q, args...)
 				if err == nil {
 					return res, err
 				}
@@ -288,8 +288,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				continue
 			}
 
-			sqlQuery := NewQuery(db, dbConn.settings, ds.c.Converters(), fillMode)
-			res, err = sqlQuery.Run(ctx, q, args...)
+			dbQuery := NewQuery(db, dbConn.settings, ds.c.Converters(), fillMode)
+			res, err = dbQuery.Run(ctx, q, args...)
 			if err == nil {
 				return res, err
 			}
