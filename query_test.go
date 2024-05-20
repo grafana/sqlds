@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,12 @@ func TestQuery_Timeout(t *testing.T) {
 
 		defer conn.Close()
 
-		_, err := QueryDB(ctx, conn, []sqlutil.Converter{}, nil, &Query{})
+		settings := backend.DataSourceInstanceSettings{
+			Name: "foo",
+		}
+
+		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil)
+		_, err := sqlQuery.Run(ctx, &Query{})
 
 		if !errors.Is(err, context.Canceled) {
 			t.Fatal("expected error to be context.Canceled, received", err)
@@ -100,7 +106,12 @@ func TestQuery_Timeout(t *testing.T) {
 
 		defer conn.Close()
 
-		_, err := QueryDB(ctx, conn, []sqlutil.Converter{}, nil, &Query{})
+		settings := backend.DataSourceInstanceSettings{
+			Name: "foo",
+		}
+
+		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil)
+		_, err := sqlQuery.Run(ctx, &Query{})
 
 		if !errors.Is(err, ErrorQuery) {
 			t.Fatal("expected function to complete, received error: ", err)

@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/grafana/dataplane/sdata/timeseries"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -36,6 +39,12 @@ const (
 // Deprecated: use sqlutil.Query directly instead
 type Query = sqlutil.Query
 
+var duration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Namespace: "plugins",
+	Name:      "plugin_external_requests_duration_seconds",
+	Help:      "Duration of requests to external services",
+}, []string{"datasource_name", "datasource_type", "error_source"})
+
 // GetQuery wraps sqlutil's GetQuery to add headers if needed
 func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
 	model, err := sqlutil.GetQuery(query)
@@ -51,16 +60,47 @@ func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Q
 	return model, nil
 }
 
-// QueryDB sends the query to the connection and converts the rows to a dataframe.
-func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query, args ...interface{}) (data.Frames, error) {
+type DBQuery struct {
+	DSName     string
+	DB         Connection
+	Settings   backend.DataSourceInstanceSettings
+	converters []sqlutil.Converter
+	fillMode   *data.FillMissing
+}
+
+func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing) *DBQuery {
+	dsName, ok := sanitizeLabelName(settings.Name)
+	if !ok {
+		backend.Logger.Warn("Failed to sanitize datasource name for prometheus label", dsName)
+	}
+	return &DBQuery{
+		DB:         db,
+		DSName:     dsName,
+		converters: converters,
+		fillMode:   fillMode,
+	}
+}
+
+// Run sends the query to the connection and converts the rows to a dataframe.
+func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (data.Frames, error) {
 	// Query the rows from the database
-	rows, err := db.QueryContext(ctx, query.RawSQL, args...)
+	start := time.Now()
+	var errorSource = "none"
+
+	defer func() {
+		if q.DSName != "" {
+			duration.WithLabelValues(q.DSName, q.Settings.Type, errorSource).Observe(time.Since(start).Seconds())
+		}
+	}()
+
+	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
 		errType := ErrorQuery
 		if errors.Is(err, context.Canceled) {
 			errType = context.Canceled
 		}
 		err := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
+		errorSource = string(backend.ErrorSourceDownstream)
 		return sqlutil.ErrorFrameFromQuery(query), err
 	}
 
@@ -70,9 +110,11 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
 			err := DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
+			errorSource = string(backend.ErrorSourceDownstream)
 			return sqlutil.ErrorFrameFromQuery(query), err
 		}
 		err := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
+		errorSource = string(backend.ErrorSourceDownstream)
 		return sqlutil.ErrorFrameFromQuery(query), err
 	}
 
@@ -83,9 +125,10 @@ func QueryDB(ctx context.Context, db Connection, converters []sqlutil.Converter,
 	}()
 
 	// Convert the response to frames
-	res, err := getFrames(rows, -1, converters, fillMode, query)
+	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
 		err := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
+		errorSource = string(backend.ErrorSourcePlugin)
 		return sqlutil.ErrorFrameFromQuery(query), err
 	}
 
@@ -202,4 +245,30 @@ func applyHeaders(query *Query, headers http.Header) *Query {
 	query.ConnectionArgs = raw
 
 	return query
+}
+
+// sanitizeLabelName removes all invalid chars from the label name.
+// If the label name is empty or contains only invalid chars, it
+// will return an error.
+func sanitizeLabelName(name string) (string, bool) {
+	if len(name) == 0 {
+		backend.Logger.Warn(fmt.Sprintf("label name cannot be empty: %s", name))
+		return "", false
+	}
+
+	out := strings.Builder{}
+	for i, b := range name {
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
+			out.WriteRune(b)
+		} else if b == ' ' {
+			out.WriteRune('_')
+		}
+	}
+
+	if out.Len() == 0 {
+		backend.Logger.Warn(fmt.Sprintf("label name only contains invalid chars: %q", name))
+		return "", false
+	}
+
+	return out.String(), true
 }
