@@ -240,8 +240,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	sqlQuery := NewQuery(dbConn.db, dbConn.settings, ds.c.Converters(), fillMode)
-	res, err := sqlQuery.Run(ctx, q, args...)
+	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.c.Converters(), fillMode)
+	res, err := dbQuery.Run(ctx, q, args...)
 	if err == nil {
 		return res, nil
 	}
