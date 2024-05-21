@@ -85,10 +85,15 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (data.Frames, error) {
 	// Query the rows from the database
 	start := time.Now()
-	var errorSource = "none"
+	var errWithSource error
 
 	defer func() {
 		if q.DSName != "" {
+			errorSource := "none"
+			if errWithSource != nil {
+				errorSource = string(ErrorSource(errWithSource))
+			}
+
 			duration.WithLabelValues(q.DSName, q.Settings.Type, errorSource).Observe(time.Since(start).Seconds())
 		}
 	}()
@@ -99,9 +104,8 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 		if errors.Is(err, context.Canceled) {
 			errType = context.Canceled
 		}
-		err := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
-		errorSource = string(backend.ErrorSourceDownstream)
-		return sqlutil.ErrorFrameFromQuery(query), err
+		errWithSource := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
+		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
 	// Check for an error response
@@ -109,13 +113,11 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 		if errors.Is(err, sql.ErrNoRows) {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
-			err := DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
-			errorSource = string(backend.ErrorSourceDownstream)
-			return sqlutil.ErrorFrameFromQuery(query), err
+			errWithSource := DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
+			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
-		err := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
-		errorSource = string(backend.ErrorSourceDownstream)
-		return sqlutil.ErrorFrameFromQuery(query), err
+		errWithSource := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
+		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
 	defer func() {
@@ -127,9 +129,8 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
-		err := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
-		errorSource = string(backend.ErrorSourcePlugin)
-		return sqlutil.ErrorFrameFromQuery(query), err
+		errWithSource := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
+		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
 	return res, nil
