@@ -248,8 +248,8 @@ func applyHeaders(query *Query, headers http.Header) *Query {
 }
 
 // sanitizeLabelName removes all invalid chars from the label name.
-// If the label name is empty or contains only invalid chars, it
-// will return an error.
+// If the label name is empty or contains only invalid chars, it will return false indicating it was not sanitized.
+// copied from https://github.com/grafana/grafana/blob/main/pkg/infra/metrics/metricutil/utils.go#L14
 func sanitizeLabelName(name string) (string, bool) {
 	if len(name) == 0 {
 		backend.Logger.Warn(fmt.Sprintf("label name cannot be empty: %s", name))
