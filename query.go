@@ -83,7 +83,6 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 
 // Run sends the query to the connection and converts the rows to a dataframe.
 func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (data.Frames, error) {
-	// Query the rows from the database
 	start := time.Now()
 	var errWithSource error
 
