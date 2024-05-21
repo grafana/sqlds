@@ -291,7 +291,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		}
 	}
 
-	return nil, err
+	return res, err
 }
 
 func (ds *SQLDatasource) dbReconnect(ctx context.Context, dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
