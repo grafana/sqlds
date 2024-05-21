@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -162,4 +163,28 @@ func TestFixFrameForLongToMulti(t *testing.T) {
 		err := fixFrameForLongToMulti(frame)
 		require.Equal(t, err, fmt.Errorf("can not convert to wide series, input is missing a time field"))
 	})
+}
+
+func TestLabelNameSanitization(t *testing.T) {
+	testcases := []struct {
+		input    string
+		expected string
+		err      bool
+	}{
+		{input: "job", expected: "job"},
+		{input: "job._loal['", expected: "job_loal"},
+		{input: "", expected: "", err: true},
+		{input: ";;;", expected: "", err: true},
+		{input: "Data source", expected: "Data_source"},
+	}
+
+	for _, tc := range testcases {
+		got, ok := sanitizeLabelName(tc.input)
+		if tc.err {
+			assert.Equal(t, false, ok)
+		} else {
+			assert.Equal(t, true, ok)
+			assert.Equal(t, tc.expected, got)
+		}
+	}
 }
