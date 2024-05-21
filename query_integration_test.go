@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -75,7 +76,12 @@ func TestQuery_MySQL(t *testing.T) {
 			RawSQL: "SELECT SLEEP(5)",
 		}
 
-		_, err := QueryDB(ctx, db, []sqlutil.Converter{}, nil, q)
+		settings := backend.DataSourceInstanceSettings{
+			Name: "foo",
+		}
+
+		sqlQuery := NewQuery(db, settings, []sqlutil.Converter{}, nil)
+		_, err := sqlQuery.Run(ctx, q)
 		if err == nil {
 			t.Fatal("expected an error but received none")
 		}
