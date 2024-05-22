@@ -149,15 +149,19 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	if err != nil {
 		return nil, err
 	}
-	if count == 0 {
-		return nil, ErrorNoResults
-	}
+
+	// the handling of zero-rows differs between various "format"s.
+	zeroRows := count == 0
 
 	frame.Meta.ExecutedQueryString = query.RawSQL
 	frame.Meta.PreferredVisualization = data.VisTypeGraph
 
 	switch query.Format {
 	case FormatOptionMulti:
+		if zeroRows {
+			return nil, ErrorNoResults
+		}
+
 		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
 
 			err = fixFrameForLongToMulti(frame)
@@ -179,6 +183,10 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 		frame.Meta.PreferredVisualization = data.VisTypeTrace
 	// Format as timeSeries
 	default:
+		if zeroRows {
+			return nil, ErrorNoResults
+		}
+
 		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
 			frame, err = data.LongToWide(frame, fillMode)
 			if err != nil {
