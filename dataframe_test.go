@@ -92,6 +92,67 @@ func TestNoRowsFrame(t *testing.T) {
 			},
 			expectedFieldCount: 0,
 		},
+		{
+			name:   "empty multi",
+			format: sqlutil.FormatOptionMulti,
+			data: test.Data{
+				Cols: []test.Column{
+					{
+						Name:     "time",
+						DataType: "TIMESTAMP",
+						Kind:     time.Unix(0, 0),
+					},
+					{
+						Name:     "tag",
+						DataType: "TEXT",
+						Kind:     "",
+					},
+					{
+						Name:     "value",
+						DataType: "FLOAT",
+						Kind:     float64(0),
+					},
+				},
+				Rows: [][]any{},
+			},
+			expectedFieldCount: 0,
+		},
+		{
+			name:   "logs",
+			format: sqlutil.FormatOptionLogs,
+			data: test.Data{
+				Cols: []test.Column{
+					{
+						Name:     "time",
+						DataType: "TIMESTAMP",
+						Kind:     time.Unix(0, 0),
+					},
+					{
+						Name:     "text",
+						DataType: "TEXT",
+						Kind:     "",
+					},
+				},
+				Rows: [][]any{},
+			},
+			expectedFieldCount: 0,
+		},
+		{
+			name:   "trace",
+			format: sqlutil.FormatOptionLogs,
+			data: test.Data{
+				Cols: []test.Column{
+					{
+						Name:     "time",
+						DataType: "TIMESTAMP",
+						Kind:     time.Unix(0, 0),
+					},
+					// FIXME: i do not know what kind of data is in trace-frames
+				},
+				Rows: [][]any{},
+			},
+			expectedFieldCount: 0,
+		},
 	}
 
 	for _, tt := range tts {
