@@ -104,11 +104,11 @@ func (s *SqlHandler) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 
+	row := s.Data.Rows[s.row]
 	s.row++
-	for _, row := range s.Data.Rows {
-		for i, col := range row {
-			dest[i] = col
-		}
+
+	for i, col := range row {
+		dest[i] = col
 	}
 	return nil
 }
