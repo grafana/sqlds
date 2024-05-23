@@ -20,6 +20,7 @@ type DriverSettings struct {
 	RetryOn        []string
 	ForwardHeaders bool
 	Errors         bool
+	Dispose        bool
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource

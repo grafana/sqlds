@@ -112,6 +112,24 @@ func NewDatasource(c Driver) *SQLDatasource {
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
 func (ds *SQLDatasource) Dispose() {
+	if ds.driverSettings.Dispose {
+		var connections []dbConnection
+		ds.dbConnections.Range(func(key, value any) bool {
+			connection, ok := value.(dbConnection)
+			if ok {
+				connections = append(connections, connection)
+			}
+			return true
+		})
+		backend.Logger.Debug(fmt.Sprintf("Disposing %d connections", len(connections)))
+		for _, conn := range connections {
+			if err := conn.db.Close(); err != nil {
+				backend.Logger.Warn(fmt.Sprintf("closing connection failed: %s", err.Error()))
+			}
+			k := defaultKey(getDatasourceUID(conn.settings))
+			ds.dbConnections.Delete(k)
+		}
+	}
 }
 
 // QueryData creates the Responses list and executes each query
@@ -151,6 +169,12 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	wg.Wait()
 
 	errs := ds.errors(response)
+
+	// Dispose after alerts and other non-user queries
+	if req.PluginContext.User == nil && ds.driverSettings.Dispose {
+		ds.Dispose()
+	}
+
 	if ds.driverSettings.Errors {
 		return response.Response(), errs
 	}
