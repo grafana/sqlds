@@ -52,6 +52,7 @@ type SQLDatasource struct {
 	// are hit. The datasource enabling this should make sure connections are cached
 	// if necessary.
 	EnableMultipleConnections bool
+	metrics                   Metrics
 }
 
 // NewDatasource creates a new `SQLDatasource`.
@@ -69,6 +70,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
+	ds.metrics = NewMetrics(settings.Name, settings.Type, KindQuery)
 
 	return ds, nil
 }
@@ -243,6 +245,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	healthChecker := &HealthChecker{
 		Connector: ds.connector,
+		Metrics:   ds.metrics.Clone().SetKind(KindHealth),
 	}
 	return healthChecker.Check(ctx, req)
 }

@@ -7,15 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/grafana/dataplane/sdata/timeseries"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -39,18 +36,6 @@ const (
 // Deprecated: use sqlutil.Query directly instead
 type Query = sqlutil.Query
 
-var duration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "plugins",
-	Name:      "plugin_query_duration_seconds",
-	Help:      "Duration of internal plugin execution",
-}, []string{"datasource_name", "datasource_type", "error_source"})
-
-var externalDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "plugins",
-	Name:      "plugin_query_external_duration_seconds",
-	Help:      "Duration of external plugin query",
-}, []string{"datasource_name", "datasource_type", "error_source"})
-
 // GetQuery wraps sqlutil's GetQuery to add headers if needed
 func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
 	model, err := sqlutil.GetQuery(query)
@@ -72,18 +57,16 @@ type DBQuery struct {
 	Settings   backend.DataSourceInstanceSettings
 	converters []sqlutil.Converter
 	fillMode   *data.FillMissing
+	metrics    Metrics
 }
 
 func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing) *DBQuery {
-	dsName, ok := sanitizeLabelName(settings.Name)
-	if !ok {
-		backend.Logger.Warn("Failed to sanitize datasource name for prometheus label", dsName)
-	}
 	return &DBQuery{
 		DB:         db,
-		DSName:     dsName,
+		DSName:     settings.Name,
 		converters: converters,
 		fillMode:   fillMode,
+		metrics:    NewMetrics(settings.Name, settings.Type, KindQuery),
 	}
 }
 
@@ -97,10 +80,10 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 			errType = context.Canceled
 		}
 		errWithSource := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
-		externalDuration.WithLabelValues(q.DSName, q.Settings.Type, string(ErrorSource(errWithSource))).Observe(time.Since(start).Seconds())
+		q.metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
-	externalDuration.WithLabelValues(q.DSName, q.Settings.Type, "none").Observe(time.Since(start).Seconds())
+	q.metrics.CollectDuration(SourceDownstream, StatusOK, time.Since(start).Seconds())
 
 	// Check for an error response
 	if err := rows.Err(); err != nil {
@@ -111,7 +94,7 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
 		errWithSource := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
-		externalDuration.WithLabelValues(q.DSName, q.Settings.Type, string(ErrorSource(errWithSource))).Observe(time.Since(start).Seconds())
+		q.metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
@@ -126,11 +109,11 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
 		errWithSource := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
-		duration.WithLabelValues(q.DSName, q.Settings.Type, string(ErrorSource(errWithSource))).Observe(time.Since(start).Seconds())
+		q.metrics.CollectDuration(SourcePlugin, StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
-	duration.WithLabelValues(q.DSName, q.Settings.Type, "none").Observe(time.Since(start).Seconds())
+	q.metrics.CollectDuration(SourcePlugin, StatusOK, time.Since(start).Seconds())
 	return res, nil
 }
 
@@ -244,30 +227,4 @@ func applyHeaders(query *Query, headers http.Header) *Query {
 	query.ConnectionArgs = raw
 
 	return query
-}
-
-// sanitizeLabelName removes all invalid chars from the label name.
-// If the label name is empty or contains only invalid chars, it will return false indicating it was not sanitized.
-// copied from https://github.com/grafana/grafana/blob/main/pkg/infra/metrics/metricutil/utils.go#L14
-func sanitizeLabelName(name string) (string, bool) {
-	if len(name) == 0 {
-		backend.Logger.Warn(fmt.Sprintf("label name cannot be empty: %s", name))
-		return "", false
-	}
-
-	out := strings.Builder{}
-	for i, b := range name {
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
-			out.WriteRune(b)
-		} else if b == ' ' {
-			out.WriteRune('_')
-		}
-	}
-
-	if out.Len() == 0 {
-		backend.Logger.Warn(fmt.Sprintf("label name only contains invalid chars: %q", name))
-		return "", false
-	}
-
-	return out.String(), true
 }
