@@ -12,7 +12,7 @@ import (
 type Metrics struct {
 	DSName string
 	DSType string
-	Kind   Kind
+	Endpoint   Endpoint
 }
 
 type Status string
