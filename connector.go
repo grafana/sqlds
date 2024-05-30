@@ -42,8 +42,6 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 }
 
 func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnection, error) {
-	start := time.Now()
-
 	key := defaultKey(c.UID)
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
@@ -56,11 +54,6 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnec
 	}
 
 	err := c.connectWithRetries(ctx, dbConn, key, headers)
-	if err != nil {
-		healthExternalDuration.WithLabelValues(dbConn.settings.Name, dbConn.settings.Type, string(ErrorSource(err))).Observe(time.Since(start).Seconds())
-	} else {
-		healthExternalDuration.WithLabelValues(dbConn.settings.Name, dbConn.settings.Type, "none").Observe(time.Since(start).Seconds())
-	}
 	return &dbConn, err
 }
 
