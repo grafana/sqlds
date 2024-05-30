@@ -245,7 +245,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	healthChecker := &HealthChecker{
 		Connector: ds.connector,
-		Metrics:   ds.metrics.Clone().SetKind(KindHealth),
+		Metrics:   ds.metrics.WithKind(KindHealth),
 	}
 	return healthChecker.Check(ctx, req)
 }

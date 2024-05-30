@@ -42,13 +42,8 @@ func NewMetrics(dsName, dsType string, kind Kind) Metrics {
 	return Metrics{DSName: dsName, DSType: dsType, Kind: kind}
 }
 
-func (m *Metrics) Clone() *Metrics {
-	return &Metrics{DSName: m.DSName, DSType: m.DSType, Kind: m.Kind}
-}
-
-func (m *Metrics) SetKind(kind Kind) Metrics {
-	m.Kind = kind
-	return *m
+func (m *Metrics) WithKind(kind Kind) Metrics {
+	return Metrics{DSName: m.DSName, DSType: m.DSType, Kind: m.Kind}
 }
 
 func (m *Metrics) CollectDuration(source Source, status Status, duration float64) {
