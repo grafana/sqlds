@@ -66,7 +66,7 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 		DSName:     settings.Name,
 		converters: converters,
 		fillMode:   fillMode,
-		metrics:    NewMetrics(settings.Name, settings.Type, KindQuery),
+		metrics:    NewMetrics(settings.Name, settings.Type, EndpointQuery),
 	}
 }
 
