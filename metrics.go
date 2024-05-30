@@ -16,7 +16,7 @@ type Metrics struct {
 }
 
 type Status string
-type Kind string
+type Endpoint string
 type Source string
 
 const (
