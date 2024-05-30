@@ -134,13 +134,13 @@ func (ds *Connector) storeDBConnection(key string, dbConn dbConnection) {
 	ds.connections.Store(key, dbConn)
 }
 
-func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query, datasourceUID string) (string, dbConnection, error) {
+func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, dbConnection, error) {
 	if !c.enableMultipleConnections && !c.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := defaultKey(datasourceUID)
+	key := defaultKey(c.UID)
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
 		return "", dbConnection{}, MissingDBConnection
@@ -149,7 +149,7 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query, dataso
 		return key, dbConn, nil
 	}
 
-	key = keyWithConnectionArgs(datasourceUID, q.ConnectionArgs)
+	key = keyWithConnectionArgs(c.UID, q.ConnectionArgs)
 	if cachedConn, ok := c.getDBConnection(key); ok {
 		return key, cachedConn, nil
 	}

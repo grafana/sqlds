@@ -99,7 +99,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
-			frames, err := ds.handleQuery(ctx, query, req.PluginContext.DataSourceInstanceSettings.UID, headers)
+			frames, err := ds.handleQuery(ctx, query, headers)
 			if err == nil {
 				if responseMutator, ok := ds.driver().(ResponseMutator); ok {
 					frames, err = responseMutator.MutateResponse(ctx, frames)
@@ -129,13 +129,13 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	return response.Response(), nil
 }
 
-func (ds *SQLDatasource) GetDBFromQuery(ctx context.Context, q *Query, datasourceUID string) (*sql.DB, error) {
-	_, dbConn, err := ds.connector.GetConnectionFromQuery(ctx, q, datasourceUID)
+func (ds *SQLDatasource) GetDBFromQuery(ctx context.Context, q *Query) (*sql.DB, error) {
+	_, dbConn, err := ds.connector.GetConnectionFromQuery(ctx, q)
 	return dbConn.db, err
 }
 
 // handleQuery will call query, and attempt to reconnect if the query failed
-func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, datasourceUID string, headers http.Header) (data.Frames, error) {
+func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, headers http.Header) (data.Frames, error) {
 	if queryMutator, ok := ds.driver().(QueryMutator); ok {
 		ctx, req = queryMutator.MutateQuery(ctx, req)
 	}
@@ -159,7 +159,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Retrieve the database connection
-	cacheKey, dbConn, err := ds.connector.GetConnectionFromQuery(ctx, q, datasourceUID)
+	cacheKey, dbConn, err := ds.connector.GetConnectionFromQuery(ctx, q)
 	if err != nil {
 		return sqlutil.ErrorFrameFromQuery(q), err
 	}

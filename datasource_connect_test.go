@@ -77,7 +77,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 				conn.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
-			key, dbConn, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage(tt.args)}, tt.dsUID)
+			key, dbConn, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage(tt.args)})
 			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
@@ -92,7 +92,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
 		conn := &Connector{driver: d, enableMultipleConnections: false}
-		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage("foo")}, "dsUID")
+		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage("foo")})
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
 		}
@@ -100,7 +100,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
 		conn := &Connector{driver: d}
-		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{}, "dsUID")
+		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{})
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
 		}
