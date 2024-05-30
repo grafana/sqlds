@@ -70,7 +70,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
-	ds.metrics = NewMetrics(settings.Name, settings.Type, KindQuery)
+	ds.metrics = NewMetrics(settings.Name, settings.Type, EndpointQuery)
 
 	return ds, nil
 }
@@ -245,7 +245,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	healthChecker := &HealthChecker{
 		Connector: ds.connector,
-		Metrics:   ds.metrics.WithKind(KindHealth),
+		Metrics:   ds.metrics.WithEndpoint(EndpointHealth),
 	}
 	return healthChecker.Check(ctx, req)
 }

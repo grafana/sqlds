@@ -10,9 +10,9 @@ import (
 )
 
 type Metrics struct {
-	DSName string
-	DSType string
-	Endpoint   Endpoint
+	DSName   string
+	DSType   string
+	Endpoint Endpoint
 }
 
 type Status string
@@ -20,12 +20,12 @@ type Endpoint string
 type Source string
 
 const (
-	StatusOK         Status = "ok"
-	StatusError      Status = "error"
-	EndpointHealth       Endpoint   = "health"
-	EndpointQuery        Endpoint  = "query"
-	SourceDownstream Source = "downstream"
-	SourcePlugin     Source = "plugin"
+	StatusOK         Status   = "ok"
+	StatusError      Status   = "error"
+	EndpointHealth   Endpoint = "health"
+	EndpointQuery    Endpoint = "query"
+	SourceDownstream Source   = "downstream"
+	SourcePlugin     Source   = "plugin"
 )
 
 var durationMetric = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -34,20 +34,20 @@ var durationMetric = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Help:      "Duration of plugin execution",
 }, []string{"datasource_name", "datasource_type", "source", "endpoint", "status"})
 
-func NewMetrics(dsName, dsType string, kind Kind) Metrics {
+func NewMetrics(dsName, dsType string, endpoint Endpoint) Metrics {
 	dsName, ok := sanitizeLabelName(dsName)
 	if !ok {
 		backend.Logger.Warn("Failed to sanitize datasource name for prometheus label", dsName)
 	}
-	return Metrics{DSName: dsName, DSType: dsType, Kind: kind}
+	return Metrics{DSName: dsName, DSType: dsType, Endpoint: endpoint}
 }
 
-func (m *Metrics) WithKind(kind Kind) Metrics {
-	return Metrics{DSName: m.DSName, DSType: m.DSType, Kind: m.Kind}
+func (m *Metrics) WithEndpoint(endpoint Endpoint) Metrics {
+	return Metrics{DSName: m.DSName, DSType: m.DSType, Endpoint: endpoint}
 }
 
 func (m *Metrics) CollectDuration(source Source, status Status, duration float64) {
-	durationMetric.WithLabelValues(m.DSName, m.DSType, string(source), string(m.Kind), string(status)).Observe(duration)
+	durationMetric.WithLabelValues(m.DSName, m.DSType, string(source), string(m.Endpoint), string(status)).Observe(duration)
 }
 
 // sanitizeLabelName removes all invalid chars from the label name.
