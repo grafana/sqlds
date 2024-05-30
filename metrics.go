@@ -22,8 +22,8 @@ type Source string
 const (
 	StatusOK         Status = "ok"
 	StatusError      Status = "error"
-	KindHealth       Kind   = "health"
-	KindQuery        Kind   = "query"
+	EndpointHealth       Endpoint   = "health"
+	EndpointQuery        Endpoint  = "query"
 	SourceDownstream Source = "downstream"
 	SourcePlugin     Source = "plugin"
 )
