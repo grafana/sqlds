@@ -32,7 +32,7 @@ var durationMetric = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Namespace: "plugins",
 	Name:      "plugin_request_duration_seconds",
 	Help:      "Duration of plugin execution",
-}, []string{"datasource_name", "datasource_type", "source", "type", "status"})
+}, []string{"datasource_name", "datasource_type", "source", "endpoint", "status"})
 
 func NewMetrics(dsName, dsType string, kind Kind) Metrics {
 	dsName, ok := sanitizeLabelName(dsName)
