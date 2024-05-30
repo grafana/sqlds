@@ -41,8 +41,14 @@ type Query = sqlutil.Query
 
 var duration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Namespace: "plugins",
-	Name:      "plugin_external_requests_duration_seconds",
-	Help:      "Duration of requests to external services",
+	Name:      "plugin_query_duration_seconds",
+	Help:      "Duration of internal plugin execution",
+}, []string{"datasource_name", "datasource_type", "error_source"})
+
+var externalDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Namespace: "plugins",
+	Name:      "plugin_query_external_duration_seconds",
+	Help:      "Duration of external plugin query",
 }, []string{"datasource_name", "datasource_type", "error_source"})
 
 // GetQuery wraps sqlutil's GetQuery to add headers if needed
@@ -84,19 +90,6 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 // Run sends the query to the connection and converts the rows to a dataframe.
 func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (data.Frames, error) {
 	start := time.Now()
-	var errWithSource error
-
-	defer func() {
-		if q.DSName != "" {
-			errorSource := "none"
-			if errWithSource != nil {
-				errorSource = string(ErrorSource(errWithSource))
-			}
-
-			duration.WithLabelValues(q.DSName, q.Settings.Type, errorSource).Observe(time.Since(start).Seconds())
-		}
-	}()
-
 	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
 		errType := ErrorQuery
@@ -104,8 +97,10 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 			errType = context.Canceled
 		}
 		errWithSource := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
+		externalDuration.WithLabelValues(q.DSName, q.Settings.Type, string(ErrorSource(errWithSource))).Observe(time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
+	externalDuration.WithLabelValues(q.DSName, q.Settings.Type, "none").Observe(time.Since(start).Seconds())
 
 	// Check for an error response
 	if err := rows.Err(); err != nil {
@@ -116,6 +111,7 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
 		errWithSource := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
+		externalDuration.WithLabelValues(q.DSName, q.Settings.Type, string(ErrorSource(errWithSource))).Observe(time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
@@ -125,13 +121,16 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 		}
 	}()
 
+	start = time.Now()
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
 		errWithSource := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
+		duration.WithLabelValues(q.DSName, q.Settings.Type, string(ErrorSource(errWithSource))).Observe(time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
+	duration.WithLabelValues(q.DSName, q.Settings.Type, "none").Observe(time.Since(start).Seconds())
 	return res, nil
 }
 
