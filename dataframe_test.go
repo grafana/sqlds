@@ -40,7 +40,7 @@ func TestNoRowsFrame(t *testing.T) {
 				},
 				Rows: [][]any{},
 			},
-			expectedFieldCount: 0,
+			expectedFieldCount: 2,
 		},
 		{
 			name:   "empty wide",
@@ -135,7 +135,7 @@ func TestNoRowsFrame(t *testing.T) {
 				},
 				Rows: [][]any{},
 			},
-			expectedFieldCount: 0,
+			expectedFieldCount: 2,
 		},
 		{
 			name:   "trace",
@@ -151,7 +151,7 @@ func TestNoRowsFrame(t *testing.T) {
 				},
 				Rows: [][]any{},
 			},
-			expectedFieldCount: 0,
+			expectedFieldCount: 1,
 		},
 	}
 
