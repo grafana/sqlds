@@ -156,6 +156,10 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 				return nil, err
 			}
 			return frames.Frames(), nil
+		} else {
+			// TODO: handle the other possible shapes,
+			// wide or tabule data.
+			return nil, errors.New("FormatOptionMulti: unsupported data shape")
 		}
 	case FormatOptionTable:
 		frame.Meta.PreferredVisualization = data.VisTypeTable
