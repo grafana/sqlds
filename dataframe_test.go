@@ -182,6 +182,7 @@ func TestNoRowsFrame(t *testing.T) {
 			require.NoError(t, err)
 			d := r.Responses["A"]
 			require.NotNil(t, d)
+			require.NoError(t, d.Error)
 			require.Len(t, d.Frames, 1)
 			require.Len(t, d.Frames[0].Fields, tt.expectedFieldCount)
 
