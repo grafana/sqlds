@@ -8,7 +8,7 @@ require (
 	github.com/go-sql-driver/mysql v1.4.0
 	github.com/google/go-cmp v0.6.0
 	github.com/grafana/dataplane/sdata v0.0.7
-	github.com/grafana/grafana-plugin-sdk-go v0.231.0
+	github.com/grafana/grafana-plugin-sdk-go v0.233.0
 	github.com/mithrandie/csvq-driver v1.6.8
 	github.com/stretchr/testify v1.9.0
 )
@@ -104,7 +104,7 @@ require (
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/grpc v1.63.2 // indirect
+	google.golang.org/grpc v1.64.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
