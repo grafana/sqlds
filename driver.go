@@ -42,6 +42,15 @@ type Connection interface {
 	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 }
 
+// QueryDataMutator  is an additional interface that could be implemented by driver.
+// This adds ability to the driver to optionally mutate the query before it's run
+// with the QueryDataRequest.
+// This is useful when we need to access properties of the request before the query is run.
+// or when we want to enhance the ctx with additional information.
+type QueryDataMutator interface {
+	MutateQueryData(ctx context.Context, req *backend.QueryDataRequest) (context.Context, *backend.QueryDataRequest)
+}
+
 // QueryMutator is an additional interface that could be implemented by driver.
 // This adds ability to the driver it can mutate query before run.
 type QueryMutator interface {

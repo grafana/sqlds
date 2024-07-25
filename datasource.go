@@ -98,6 +98,10 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 	wg.Add(len(req.Queries))
 
+	if queryDataMutator, ok := ds.driver().(QueryDataMutator); ok {
+		ctx, req = queryDataMutator.MutateQueryData(ctx, req)
+	}
+
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
