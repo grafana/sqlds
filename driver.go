@@ -45,10 +45,14 @@ type Connection interface {
 // QueryDataMutator  is an additional interface that could be implemented by driver.
 // This adds ability to the driver to optionally mutate the query before it's run
 // with the QueryDataRequest.
-// This is useful when we need to access properties of the request before the query is run.
-// or when we want to enhance the ctx with additional information.
 type QueryDataMutator interface {
 	MutateQueryData(ctx context.Context, req *backend.QueryDataRequest) (context.Context, *backend.QueryDataRequest)
+}
+
+// CheckHealthMutator  is an additional interface that could be implemented by driver.
+// This adds ability to the driver to optionally mutate the CheckHealth before it's run
+type CheckHealthMutator interface {
+	MutateCheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (context.Context, *backend.CheckHealthRequest)
 }
 
 // QueryMutator is an additional interface that could be implemented by driver.
