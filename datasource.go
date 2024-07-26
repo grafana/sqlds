@@ -247,8 +247,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 // CheckHealth pings the connected SQL database
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	if queryDataMutator, ok := ds.driver().(CheckHealthMutator); ok {
-		ctx, req = queryDataMutator.MutateCheckHealth(ctx, req)
+	if checkHealthMutator, ok := ds.driver().(CheckHealthMutator); ok {
+		ctx, req = checkHealthMutator.MutateCheckHealth(ctx, req)
 	}
 	healthChecker := &HealthChecker{
 		Connector: ds.connector,
