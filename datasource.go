@@ -258,7 +258,7 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 	}
 	// TODO: Its early beacause the headers get forwarded in this function
 	// But at that point we're already returning the CheckHealthResult
-	return healthChecker.Check(ctx, req)
+	return healthChecker.Check(ctx, req, ds)
 
 	// TODO: 5 So instead we need the MutateCheckHealth function to
 	// be called with a backend.CheckHealthResult as a parameter
