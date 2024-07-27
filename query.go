@@ -44,6 +44,7 @@ func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Q
 	}
 
 	if setHeaders {
+		// TODO: 5 this is the highest place where the headers are set
 		applyHeaders(model, headers)
 	}
 

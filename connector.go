@@ -60,6 +60,7 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnec
 func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, key string, headers http.Header) error {
 	q := &Query{}
 	if c.driverSettings.ForwardHeaders {
+		// TODO: 4 After this point the headers are now forwarded
 		applyHeaders(q, headers)
 	}
 
