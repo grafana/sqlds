@@ -39,12 +39,12 @@ type Query = sqlutil.Query
 // GetQuery wraps sqlutil's GetQuery to add headers if needed
 func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
 	model, err := sqlutil.GetQuery(query)
-
 	if err != nil {
 		return nil, PluginError(err)
 	}
 
 	if setHeaders {
+		// TODO: 5 this is the highest place where the headers are set
 		applyHeaders(model, headers)
 	}
 

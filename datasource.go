@@ -247,14 +247,24 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 // CheckHealth pings the connected SQL database
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+	// TODO: 1 - Move this...
 	if checkHealthMutator, ok := ds.driver().(CheckHealthMutator); ok {
 		ctx, req = checkHealthMutator.MutateCheckHealth(ctx, req)
 	}
+	// TODO: Move this its too early for the ctx and req yet
 	healthChecker := &HealthChecker{
 		Connector: ds.connector,
 		Metrics:   ds.metrics.WithEndpoint(EndpointHealth),
 	}
+	// TODO: Its early beacause the headers get forwarded in this function
+	// But at that point we're already returning the CheckHealthResult
 	return healthChecker.Check(ctx, req)
+
+	// TODO: 5 So instead we need the MutateCheckHealth function to
+	// be called with a backend.CheckHealthResult as a parameter
+	// to also return it if need be
+	// that way this is not a breaking change
+	// and token providers can be used
 }
 
 func (ds *SQLDatasource) DriverSettings() DriverSettings {
