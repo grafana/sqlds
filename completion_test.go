@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -109,7 +108,7 @@ func TestCompletable(t *testing.T) {
 			sqlds := &SQLDatasource{}
 			sqlds.Completable = test.fakeImpl
 
-			b := ioutil.NopCloser(bytes.NewReader([]byte(test.reqBody)))
+			b := io.NopCloser(bytes.NewReader([]byte(test.reqBody)))
 			sqlds.getResources(test.method)(w, &http.Request{Body: b})
 			resp := w.Result()
 			body, _ := io.ReadAll(resp.Body)
@@ -151,7 +150,7 @@ func Test_registerRoutes(t *testing.T) {
 		}
 		mux.ServeHTTP(resp, req)
 
-		respByte, err := ioutil.ReadAll(resp.Body)
+		respByte, err := io.ReadAll(resp.Body)
 		if err != nil {
 			t.Fatalf("unexpected error %v", err)
 		}
@@ -176,10 +175,10 @@ func Test_registerRoutes(t *testing.T) {
 
 func TestParseOptions(t *testing.T) {
 	tests := []struct {
+		err         error
+		result      Options
 		description string
 		input       json.RawMessage
-		result      Options
-		err         error
 	}{
 		{
 			description: "parses input",

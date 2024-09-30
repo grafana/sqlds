@@ -35,12 +35,12 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	db3 := &sql.DB{}
 	d := &fakeDriver{openDBfn: func(msg json.RawMessage) (*sql.DB, error) { return db3, nil }}
 	tests := []struct {
+		existingDB  *sql.DB
+		expectedDB  *sql.DB
 		desc        string
 		dsUID       string
 		args        string
-		existingDB  *sql.DB
 		expectedKey string
-		expectedDB  *sql.DB
 	}{
 		{
 			desc:        "it should return the default db with no args",

@@ -13,11 +13,11 @@ import (
 )
 
 type DriverSettings struct {
-	Timeout        time.Duration
 	FillMode       *data.FillMissing
+	RetryOn        []string
+	Timeout        time.Duration
 	Retries        int
 	Pause          int
-	RetryOn        []string
 	ForwardHeaders bool
 	Errors         bool
 }

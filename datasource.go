@@ -45,14 +45,11 @@ type dbConnection struct {
 
 type SQLDatasource struct {
 	Completable
-	connector *Connector
 	backend.CallResourceHandler
-	CustomRoutes map[string]func(http.ResponseWriter, *http.Request)
-	// Enabling multiple connections may cause that concurrent connection limits
-	// are hit. The datasource enabling this should make sure connections are cached
-	// if necessary.
-	EnableMultipleConnections bool
+	connector                 *Connector
+	CustomRoutes              map[string]func(http.ResponseWriter, *http.Request)
 	metrics                   Metrics
+	EnableMultipleConnections bool
 }
 
 // NewDatasource creates a new `SQLDatasource`.
