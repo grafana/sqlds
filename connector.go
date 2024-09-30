@@ -134,6 +134,15 @@ func (ds *Connector) storeDBConnection(key string, dbConn dbConnection) {
 	ds.connections.Store(key, dbConn)
 }
 
+// Dispose is called when a new SQLDatasource is c
+func (c *Connector) Dispose() {
+	c.connections.Range(func(_, conn interface{}) bool {
+		_ = conn.(dbConnection).db.Close()
+		return true
+	})
+	c.connections.Clear()
+}
+
 func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, dbConnection, error) {
 	if !c.enableMultipleConnections && !c.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
 		return "", dbConnection{}, MissingMultipleConnectionsConfig

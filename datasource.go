@@ -85,6 +85,7 @@ func NewDatasource(c Driver) *SQLDatasource {
 // Dispose cleans up datasource instance resources.
 // Note: Called when testing and saving a datasource
 func (ds *SQLDatasource) Dispose() {
+	ds.connector.Dispose()
 }
 
 // QueryData creates the Responses list and executes each query
