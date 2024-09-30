@@ -39,7 +39,6 @@ type Query = sqlutil.Query
 // GetQuery wraps sqlutil's GetQuery to add headers if needed
 func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
 	model, err := sqlutil.GetQuery(query)
-
 	if err != nil {
 		return nil, PluginError(err)
 	}
@@ -52,12 +51,12 @@ func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Q
 }
 
 type DBQuery struct {
-	DSName     string
 	DB         Connection
-	Settings   backend.DataSourceInstanceSettings
-	converters []sqlutil.Converter
 	fillMode   *data.FillMissing
+	Settings   backend.DataSourceInstanceSettings
 	metrics    Metrics
+	DSName     string
+	converters []sqlutil.Converter
 }
 
 func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing) *DBQuery {
