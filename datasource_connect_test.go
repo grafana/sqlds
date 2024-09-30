@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -27,6 +28,16 @@ func (d fakeDriver) Macros() Macros {
 
 func (d fakeDriver) Converters() []sqlutil.Converter {
 	return []sqlutil.Converter{}
+}
+
+type fakeSQLConnector struct{}
+
+func (f fakeSQLConnector) Connect(_ context.Context) (driver.Conn, error) {
+	return nil, nil
+}
+
+func (f fakeSQLConnector) Driver() driver.Driver {
+	return nil
 }
 
 func Test_getDBConnectionFromQuery(t *testing.T) {
@@ -108,20 +119,21 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 }
 
 func Test_Dispose(t *testing.T) {
-	t.Run("it should not delete connections", func(t *testing.T) {
-		conn := &Connector{}
-
+	t.Run("it should close connections", func(t *testing.T) {
+		db := sql.OpenDB(fakeSQLConnector{})
+		d := &fakeDriver{openDBfn: func(msg json.RawMessage) (*sql.DB, error) { return db, nil }}
+		conn := &Connector{driver: d}
 		ds := &SQLDatasource{connector: conn}
-		conn.connections.Store(defaultKey("uid1"), dbConnection{})
-		conn.connections.Store("foo", dbConnection{})
+		conn.connections.Store(defaultKey("uid1"), dbConnection{db: db})
+		conn.connections.Store("foo", dbConnection{db: db})
 		ds.Dispose()
 		count := 0
 		conn.connections.Range(func(key, value interface{}) bool {
 			count++
 			return true
 		})
-		if count != 2 {
-			t.Errorf("missing connections")
+		if count != 0 {
+			t.Errorf("did not close all connections")
 		}
 	})
 }

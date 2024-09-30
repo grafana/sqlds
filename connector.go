@@ -134,7 +134,7 @@ func (ds *Connector) storeDBConnection(key string, dbConn dbConnection) {
 	ds.connections.Store(key, dbConn)
 }
 
-// Dispose is called when a new SQLDatasource is c
+// Dispose is called when an existing SQLDatasource needs to be replaced
 func (c *Connector) Dispose() {
 	c.connections.Range(func(_, conn interface{}) bool {
 		_ = conn.(dbConnection).db.Close()
