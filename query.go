@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -108,9 +109,9 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
-		errWithSource := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
-		q.metrics.CollectDuration(SourcePlugin, StatusError, time.Since(start).Seconds())
-		return sqlutil.ErrorFrameFromQuery(query), errWithSource
+		errorWithSource := errorsource.SourceError(backend.ErrorSourcePlugin, fmt.Errorf("%w: %s", err, "Could not process SQL results"), false)
+		q.metrics.CollectDuration(Source(errorWithSource.ErrorSource()), StatusError, time.Since(start).Seconds())
+		return sqlutil.ErrorFrameFromQuery(query), errorWithSource
 	}
 
 	q.metrics.CollectDuration(SourcePlugin, StatusOK, time.Since(start).Seconds())
