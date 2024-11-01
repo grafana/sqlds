@@ -29,9 +29,8 @@ func DownstreamError(err error, override ...bool) error {
 }
 
 func ErrorSource(err error) backend.ErrorSource {
-	var se es.Error
-	if errors.As(err, &se) {
-		return se.Source()
+	if backend.IsDownstreamError(err) {
+		return backend.ErrorSourceDownstream
 	}
 	return backend.ErrorSourcePlugin
 }
