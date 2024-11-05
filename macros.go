@@ -2,12 +2,15 @@ package sqlds
 
 import (
 	"errors"
+	"strings"
+
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 )
 
 var (
 	// ErrorBadArgumentCount is returned from macros when the wrong number of arguments were provided
-	ErrorBadArgumentCount = errors.New("unexpected number of arguments")
+	ErrorBadArgumentCount     = errors.New("unexpected number of arguments")
+	ErrorParsingMacroBrackets = errors.New("failed to parse macro arguments (missing close bracket?)")
 )
 
 // MacroFunc defines a signature for applying a query macro
@@ -27,4 +30,9 @@ var DefaultMacros = sqlutil.DefaultMacros
 // Deprecated: use sqlutil.Interpolate directly
 func Interpolate(driver Driver, query *Query) (string, error) {
 	return sqlutil.Interpolate(query, driver.Macros())
+}
+
+func IsDownstreamError(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, ErrorBadArgumentCount.Error()) || errStr == ErrorParsingMacroBrackets.Error()
 }

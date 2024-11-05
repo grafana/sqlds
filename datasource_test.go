@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/grafana/sqlds/v4"
 	"github.com/grafana/sqlds/v4/test"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +33,7 @@ func Test_query_retries(t *testing.T) {
 		QueryError: errors.New("foo"),
 	}
 
-	req, handler, ds := queryRequest(t, "error", opts, cfg)
+	req, handler, ds := queryRequest(t, "error", opts, cfg, nil)
 
 	data, err := ds.QueryData(context.Background(), req)
 	assert.Nil(t, err)
@@ -56,7 +58,7 @@ func Test_query_apply_headers(t *testing.T) {
 	}
 	cfg := `{ "timeout": 0, "retries": 1, "retryOn": ["missing token"], "forwardHeaders": true }`
 
-	req, handler, ds := queryRequest(t, "headers", opts, cfg)
+	req, handler, ds := queryRequest(t, "headers", opts, cfg, nil)
 
 	req.SetHTTPHeader("foo", "bar")
 
@@ -99,8 +101,98 @@ func Test_no_errors(t *testing.T) {
 	assert.Equal(t, expected, result.Message)
 }
 
-func queryRequest(t *testing.T, name string, opts test.DriverOpts, cfg string) (*backend.QueryDataRequest, *test.SqlHandler, *sqlds.SQLDatasource) {
-	driver, handler := test.NewDriver(name, test.Data{}, nil, opts)
+func Test_custom_marco_errors(t *testing.T) {
+	cfg := `{ "timeout": 0, "retries": 0, "retryOn": ["foo"], query: "badArgumentCount" }`
+	opts := test.DriverOpts{}
+
+	badArgumentCountFunc := func(query *sqlds.Query, args []string) (string, error) {
+		return "", sqlutil.ErrorBadArgumentCount
+	}
+	macros := sqlds.Macros{
+		"foo": badArgumentCountFunc,
+	}
+
+	req, _, ds := queryRequest(t, "interpolate", opts, cfg, macros)
+
+	req.Queries[0].JSON = []byte(`{ "rawSql": "select $__foo from bar;" }`)
+
+	data, err := ds.QueryData(context.Background(), req)
+	assert.Nil(t, err)
+
+	res := data.Responses["foo"]
+	assert.NotNil(t, res.Error)
+	assert.Equal(t, backend.ErrorSourceDownstream, res.ErrorSource)
+	assert.Contains(t, res.Error.Error(), sqlutil.ErrorBadArgumentCount.Error())
+}
+
+func Test_default_macro_errors(t *testing.T) {
+	tests := []struct {
+		name      string
+		rawSQL    string
+		wantError string
+	}{
+		{
+			name:      "missing parameters",
+			rawSQL:    "select * from bar where $__timeGroup(",
+			wantError: "missing close bracket",
+		},
+		{
+			name:      "incorrect argument count 0 - timeGroup",
+			rawSQL:    "select * from bar where $__timeGroup()",
+			wantError: sqlutil.ErrorBadArgumentCount.Error(),
+		},
+		{
+			name:      "incorrect argument count 3 - timeGroup",
+			rawSQL:    "select * from bar where $__timeGroup(1,2,3)",
+			wantError: sqlutil.ErrorBadArgumentCount.Error(),
+		},
+		{
+			name:      "incorrect argument count 0 - timeFilter",
+			rawSQL:    "select * from bar where $__timeFilter",
+			wantError: sqlutil.ErrorBadArgumentCount.Error(),
+		},
+		{
+			name:      "incorrect argument count - timeFilter",
+			rawSQL:    "select * from bar where $__timeFilter(1,2,3)",
+			wantError: sqlutil.ErrorBadArgumentCount.Error(),
+		},
+		{
+			name:      "incorrect argument count 0 - timeFrom",
+			rawSQL:    "select * from bar where $__timeFrom",
+			wantError: sqlutil.ErrorBadArgumentCount.Error(),
+		},
+		{
+			name:      "incorrect argument count 3 - timeFrom",
+			rawSQL:    "select * from bar where $__timeFrom(1,2,3)",
+			wantError: sqlutil.ErrorBadArgumentCount.Error(),
+		},
+	}
+
+	// Common test configuration
+	cfg := `{ "timeout": 0, "retries": 0, "retryOn": ["foo"], query: "badArgumentCount" }`
+	opts := test.DriverOpts{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup request
+			req, _, ds := queryRequest(t, "interpolate", opts, cfg, nil)
+			req.Queries[0].JSON = []byte(fmt.Sprintf(`{ "rawSql": "%s" }`, tt.rawSQL))
+
+			// Execute query
+			data, err := ds.QueryData(context.Background(), req)
+			assert.Nil(t, err)
+
+			// Verify response
+			res := data.Responses["foo"]
+			assert.NotNil(t, res.Error)
+			assert.Equal(t, backend.ErrorSourceDownstream, res.ErrorSource)
+			assert.Contains(t, res.Error.Error(), tt.wantError)
+		})
+	}
+}
+
+func queryRequest(t *testing.T, name string, opts test.DriverOpts, cfg string, marcos sqlds.Macros) (*backend.QueryDataRequest, *test.SqlHandler, *sqlds.SQLDatasource) {
+	driver, handler := test.NewDriver(name, test.Data{}, nil, opts, marcos)
 	ds := sqlds.NewDatasource(driver)
 
 	req, settings := setupQueryRequest(name, cfg)
@@ -126,7 +218,7 @@ func setupQueryRequest(id string, cfg string) (*backend.QueryDataRequest, backen
 }
 
 func healthRequest(t *testing.T, name string, opts test.DriverOpts, cfg string) (backend.CheckHealthRequest, *test.SqlHandler, *sqlds.SQLDatasource) {
-	driver, handler := test.NewDriver(name, test.Data{}, nil, opts)
+	driver, handler := test.NewDriver(name, test.Data{}, nil, opts, nil)
 	ds := sqlds.NewDatasource(driver)
 
 	req, settings := setupHealthRequest(name, cfg)
