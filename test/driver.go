@@ -19,7 +19,7 @@ import (
 var registered = map[string]*SqlHandler{}
 
 // NewDriver creates and registers a new test datasource driver
-func NewDriver(name string, dbdata Data, converters []sqlutil.Converter, opts DriverOpts) (TestDS, *SqlHandler) {
+func NewDriver(name string, dbdata Data, converters []sqlutil.Converter, opts DriverOpts, macros sqlds.Macros) (TestDS, *SqlHandler) {
 	if registered[name] == nil {
 		handler := NewDriverHandler(dbdata, opts)
 		registered[name] = &handler
@@ -34,14 +34,16 @@ func NewDriver(name string, dbdata Data, converters []sqlutil.Converter, opts Dr
 			return sql.Open(name, "")
 		},
 		converters,
+		macros,
 	), registered[name]
 }
 
 // NewTestDS creates a new test datasource driver
-func NewTestDS(openDBfn func(msg json.RawMessage) (*sql.DB, error), converters []sqlutil.Converter) TestDS {
+func NewTestDS(openDBfn func(msg json.RawMessage) (*sql.DB, error), converters []sqlutil.Converter, macros sqlds.Macros) TestDS {
 	return TestDS{
 		openDBfn:   openDBfn,
 		converters: converters,
+		macros:     macros,
 	}
 }
 
@@ -146,6 +148,7 @@ type Column struct {
 type TestDS struct {
 	openDBfn   func(msg json.RawMessage) (*sql.DB, error)
 	converters []sqlutil.Converter
+	macros     sqlds.Macros
 	sqlds.Driver
 }
 
@@ -171,7 +174,7 @@ func (s TestDS) Settings(ctx context.Context, config backend.DataSourceInstanceS
 
 // Macros - Macros for the test database
 func (s TestDS) Macros() sqlds.Macros {
-	return sqlds.DefaultMacros
+	return s.macros
 }
 
 // Converters - Converters for the test database

@@ -158,7 +158,7 @@ func TestNoRowsFrame(t *testing.T) {
 	for _, tt := range tts {
 		t.Run(tt.name, func(t *testing.T) {
 			id := "empty-frames" + tt.name
-			driver, _ := test.NewDriver(id, tt.data, nil, test.DriverOpts{})
+			driver, _ := test.NewDriver(id, tt.data, nil, test.DriverOpts{}, nil)
 			ds := sqlds.NewDatasource(driver)
 
 			settings := backend.DataSourceInstanceSettings{UID: id, JSONData: []byte("{}")}

@@ -2,12 +2,12 @@ package sqlds
 
 import (
 	"errors"
+
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 )
 
 var (
-	// ErrorBadArgumentCount is returned from macros when the wrong number of arguments were provided
-	ErrorBadArgumentCount = errors.New("unexpected number of arguments")
+	ErrorParsingMacroBrackets = errors.New("failed to parse macro arguments (missing close bracket?)")
 )
 
 // MacroFunc defines a signature for applying a query macro
