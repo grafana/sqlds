@@ -153,7 +153,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// Apply supported macros to the query
 	q.RawSQL, err = Interpolate(ds.driver(), q)
 	if err != nil {
-		if errors.Is(err, sqlutil.ErrorBadArgumentCount) {
+		if errors.Is(err, sqlutil.ErrorBadArgumentCount) || err.Error() == ErrorParsingMacroBrackets.Error() {
 			err = backend.DownstreamError(err)
 		}
 		return sqlutil.ErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)
