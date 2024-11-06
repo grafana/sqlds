@@ -152,7 +152,7 @@ func Test_default_macro_errors(t *testing.T) {
 			wantError: sqlutil.ErrorBadArgumentCount.Error(),
 		},
 		{
-			name:      "incorrect argument count - timeFilter",
+			name:      "incorrect argument count 3 - timeFilter",
 			rawSQL:    "select * from bar where $__timeFilter(1,2,3)",
 			wantError: sqlutil.ErrorBadArgumentCount.Error(),
 		},
