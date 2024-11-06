@@ -110,11 +110,11 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
 		// We default to plugin error source
-		errSource :=  status.SourcePlugin
+		errSource := status.SourcePlugin
 		if backend.IsDownstreamHTTPError(err) || isProcessingDownstreamError(err) {
 			errSource = status.SourceDownstream
 		}
-		errWithSource := errorsource.SourceError(errSource ,fmt.Errorf("%w: %s", err, "Could not process SQL results"), false)
+		errWithSource := errorsource.SourceError(errSource, fmt.Errorf("%w: %s", err, "Could not process SQL results"), false)
 		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
