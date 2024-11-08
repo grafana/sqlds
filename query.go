@@ -13,6 +13,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
+	"github.com/grafana/grafana-plugin-sdk-go/experimental/status"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -107,8 +109,13 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	// Convert the response to frames
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
-		errWithSource := PluginError(fmt.Errorf("%w: %s", err, "Could not process SQL results"))
-		q.metrics.CollectDuration(SourcePlugin, StatusError, time.Since(start).Seconds())
+		// We default to plugin error source
+		errSource := status.SourcePlugin
+		if backend.IsDownstreamHTTPError(err) || isProcessingDownstreamError(err) {
+			errSource = status.SourceDownstream
+		}
+		errWithSource := errorsource.SourceError(errSource, fmt.Errorf("%w: %s", err, "Could not process SQL results"), false)
+		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
@@ -234,4 +241,18 @@ func applyHeaders(query *Query, headers http.Header) *Query {
 	query.ConnectionArgs = raw
 
 	return query
+}
+
+func isProcessingDownstreamError(err error) bool {
+	downstreamErrors := []error{
+		data.ErrorInputFieldsWithoutRows,
+		data.ErrorSeriesUnsorted,
+		data.ErrorNullTimeValues,
+	}
+	for _, e := range downstreamErrors {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
 }

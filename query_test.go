@@ -188,3 +188,46 @@ func TestLabelNameSanitization(t *testing.T) {
 		}
 	}
 }
+
+func TestIsProcessingDownstreamError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "ErrorInputFieldsWithoutRows returns true",
+			err:      data.ErrorInputFieldsWithoutRows,
+			expected: true,
+		},
+		{
+			name:     "ErrorSeriesUnsorted returns true",
+			err:      data.ErrorSeriesUnsorted,
+			expected: true,
+		},
+		{
+			name:     "ErrorNullTimeValues returns true",
+			err:      data.ErrorNullTimeValues,
+			expected: true,
+		},
+		{
+			name:     "Different error returns false",
+			err:      errors.New("some other error"),
+			expected: false,
+		},
+		{
+			name:     "Wrapped downstream error returns true",
+			err:      fmt.Errorf("wrapped: %w", data.ErrorInputFieldsWithoutRows),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isProcessingDownstreamError(tt.err)
+			if result != tt.expected {
+				t.Errorf("isProcessingDownstreamError(%v) = %v; want %v", tt.err, result, tt.expected)
+			}
+		})
+	}
+}
