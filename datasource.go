@@ -50,6 +50,10 @@ type SQLDatasource struct {
 	CustomRoutes              map[string]func(http.ResponseWriter, *http.Request)
 	metrics                   Metrics
 	EnableMultipleConnections bool
+	// PreCheckHealth (optional). Performs custom health check before the Connect method
+	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
+	// PostCheckHealth (optional).Performs custom health check after the Connect method
+	PostCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 }
 
 // NewDatasource creates a new `SQLDatasource`.
@@ -252,8 +256,10 @@ func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHeal
 		ctx, req = checkHealthMutator.MutateCheckHealth(ctx, req)
 	}
 	healthChecker := &HealthChecker{
-		Connector: ds.connector,
-		Metrics:   ds.metrics.WithEndpoint(EndpointHealth),
+		Connector:       ds.connector,
+		Metrics:         ds.metrics.WithEndpoint(EndpointHealth),
+		PreCheckHealth:  ds.PreCheckHealth,
+		PostCheckHealth: ds.PostCheckHealth,
 	}
 	return healthChecker.Check(ctx, req)
 }
