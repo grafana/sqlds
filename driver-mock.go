@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,8 @@ import (
 
 // SQLMock connects to a local folder with csv files
 type SQLMock struct {
-	folder string
+	folder              string
+	ShouldFailToConnect bool
 }
 
 func (h *SQLMock) Settings(_ context.Context, _ backend.DataSourceInstanceSettings) DriverSettings {
@@ -31,6 +33,9 @@ func (h *SQLMock) Settings(_ context.Context, _ backend.DataSourceInstanceSettin
 
 // Connect opens a sql.DB connection using datasource settings
 func (h *SQLMock) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
+	if h.ShouldFailToConnect {
+		return nil, errors.New("failed to create mock")
+	}
 	backend.Logger.Debug("connecting to mock data")
 	folder := h.folder
 	if folder == "" {
