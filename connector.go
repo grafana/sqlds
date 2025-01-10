@@ -77,7 +77,7 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 		err = c.connect(conn)
 		if err != nil {
 			if !shouldRetry(c.driverSettings.RetryOn, err.Error()) {
-				return err
+				break
 			}
 
 			if c.driverSettings.Pause > 0 {
