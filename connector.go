@@ -75,23 +75,25 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 			settings: conn.settings,
 		}
 		err = c.connect(conn)
-		if err != nil {
-			if !shouldRetry(c.driverSettings.RetryOn, err.Error()) {
-				break
-			}
-
-			if c.driverSettings.Pause > 0 {
-				time.Sleep(time.Duration(c.driverSettings.Pause * int(time.Second)))
-			}
-			backend.Logger.Warn(fmt.Sprintf("connect failed: %s. Retrying %d times", err.Error(), i))
+		if err == nil {
+			break
 		}
+
+		if !shouldRetry(c.driverSettings.RetryOn, err.Error()) {
+			break
+		}
+
+		if i+1 == c.driverSettings.Retries {
+			break
+		}
+
+		if c.driverSettings.Pause > 0 {
+			time.Sleep(time.Duration(c.driverSettings.Pause * int(time.Second)))
+		}
+		backend.Logger.Warn(fmt.Sprintf("connect failed: %s. Retrying %d times", err.Error(), i+1))
 	}
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (c *Connector) connect(conn dbConnection) error {
