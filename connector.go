@@ -27,7 +27,7 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 	ds := driver.Settings(ctx, settings)
 	db, err := driver.Connect(ctx, settings, nil)
 	if err != nil {
-		return nil, DownstreamError(err)
+		return nil, backend.DownstreamError(err)
 	}
 
 	conn := &Connector{
@@ -98,7 +98,7 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 
 func (c *Connector) connect(conn dbConnection) error {
 	if err := c.ping(conn); err != nil {
-		return DownstreamError(err)
+		return backend.DownstreamError(err)
 	}
 
 	return nil
@@ -122,7 +122,7 @@ func (c *Connector) Reconnect(ctx context.Context, dbConn dbConnection, q *Query
 
 	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return nil, DownstreamError(err)
+		return nil, backend.DownstreamError(err)
 	}
 	c.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
 	return db, nil
@@ -171,7 +171,7 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 
 	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
-		return "", dbConnection{}, DownstreamError(err)
+		return "", dbConnection{}, backend.DownstreamError(err)
 	}
 	// Assign this connection in the cache
 	dbConn = dbConnection{db, dbConn.settings}

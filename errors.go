@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	es "github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
 )
 
 var (
@@ -19,14 +18,6 @@ var (
 	// ErrorNoResults is returned if there were no results returned
 	ErrorNoResults = errors.New("no results returned from query")
 )
-
-func PluginError(err error, override ...bool) error {
-	return es.PluginError(err, len(override) > 0)
-}
-
-func DownstreamError(err error, override ...bool) error {
-	return es.DownstreamError(err, len(override) > 0)
-}
 
 func ErrorSource(err error) backend.ErrorSource {
 	if backend.IsDownstreamError(err) {

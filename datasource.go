@@ -21,8 +21,8 @@ import (
 const defaultKeySuffix = "default"
 
 var (
-	ErrorMissingMultipleConnectionsConfig = PluginError(errors.New("received connection arguments but the feature is not enabled"))
-	ErrorMissingDBConnection              = PluginError(errors.New("unable to get default db connection"))
+	ErrorMissingMultipleConnectionsConfig = backend.PluginError(errors.New("received connection arguments but the feature is not enabled"))
+	ErrorMissingDBConnection              = backend.PluginError(errors.New("unable to get default db connection"))
 	HeaderKey                             = "grafana-http-headers"
 	// Deprecated: ErrorMissingMultipleConnectionsConfig should be used instead
 	MissingMultipleConnectionsConfig = ErrorMissingMultipleConnectionsConfig
@@ -61,13 +61,13 @@ type SQLDatasource struct {
 func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	conn, err := NewConnector(ctx, ds.driver(), settings, ds.EnableMultipleConnections)
 	if err != nil {
-		return nil, DownstreamError(err)
+		return nil, backend.DownstreamError(err)
 	}
 	ds.connector = conn
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
 	if err != nil {
-		return nil, PluginError(err)
+		return nil, backend.PluginError(err)
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
@@ -112,7 +112,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 				if responseMutator, ok := ds.driver().(ResponseMutator); ok {
 					frames, err = responseMutator.MutateResponse(ctx, frames)
 					if err != nil {
-						err = PluginError(err)
+						err = backend.PluginError(err)
 					}
 				}
 			}
@@ -210,7 +210,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				backend.Logger.Warn(fmt.Sprintf("query failed: %s. Retrying %d times", err.Error(), i))
 				db, err := ds.connector.Reconnect(ctx, dbConn, q, cacheKey)
 				if err != nil {
-					return nil, DownstreamError(err)
+					return nil, backend.DownstreamError(err)
 				}
 
 				if ds.DriverSettings().Pause > 0 {
