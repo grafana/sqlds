@@ -13,8 +13,6 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/grafana/grafana-plugin-sdk-go/experimental/errorsource"
-	"github.com/grafana/grafana-plugin-sdk-go/experimental/status"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -42,7 +40,7 @@ type Query = sqlutil.Query
 func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Query, error) {
 	model, err := sqlutil.GetQuery(query)
 	if err != nil {
-		return nil, PluginError(err)
+		return nil, backend.PluginError(err)
 	}
 
 	if setHeaders {
@@ -80,7 +78,7 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 		if errors.Is(err, context.Canceled) {
 			errType = context.Canceled
 		}
-		errWithSource := DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
+		errWithSource := backend.DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
 		q.metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
@@ -91,10 +89,10 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 		if errors.Is(err, sql.ErrNoRows) {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
-			errWithSource := DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
+			errWithSource := backend.DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
 			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
-		errWithSource := DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
+		errWithSource := backend.DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
 		q.metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
@@ -110,11 +108,11 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
 	if err != nil {
 		// We default to plugin error source
-		errSource := status.SourcePlugin
+		errSource := backend.ErrorSourcePlugin
 		if backend.IsDownstreamHTTPError(err) || isProcessingDownstreamError(err) {
-			errSource = status.SourceDownstream
+			errSource = backend.ErrorSourceDownstream
 		}
-		errWithSource := errorsource.SourceError(errSource, fmt.Errorf("%w: %s", err, "Could not process SQL results"), false)
+		errWithSource := backend.NewErrorWithSource(fmt.Errorf("%w: %s", err, "Could not process SQL results"), errSource)	
 		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
