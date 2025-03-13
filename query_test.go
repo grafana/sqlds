@@ -84,7 +84,7 @@ func TestQuery_Timeout(t *testing.T) {
 			Name: "foo",
 		}
 
-		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil)
+		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
 		_, err := sqlQuery.Run(ctx, &Query{})
 
 		if !errors.Is(err, context.Canceled) {
@@ -111,7 +111,7 @@ func TestQuery_Timeout(t *testing.T) {
 			Name: "foo",
 		}
 
-		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil)
+		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
 		_, err := sqlQuery.Run(ctx, &Query{})
 
 		if !errors.Is(err, ErrorQuery) {
