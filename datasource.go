@@ -19,6 +19,7 @@ import (
 )
 
 const defaultKeySuffix = "default"
+const defaultRowLimit = int64(-1)
 
 var (
 	ErrorMissingMultipleConnectionsConfig = backend.PluginError(errors.New("received connection arguments but the feature is not enabled"))
@@ -50,6 +51,10 @@ type SQLDatasource struct {
 	CustomRoutes              map[string]func(http.ResponseWriter, *http.Request)
 	metrics                   Metrics
 	EnableMultipleConnections bool
+	// EnableRowLimit: enables using the dataproxy.row_limit setting to limit the number of rows returned by the query
+	// https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#row_limit
+	EnableRowLimit bool
+	rowLimit       int64
 	// PreCheckHealth (optional). Performs custom health check before the Connect method
 	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 	// PostCheckHealth (optional).Performs custom health check after the Connect method
@@ -72,6 +77,17 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 
 	ds.CallResourceHandler = httpadapter.New(mux)
 	ds.metrics = NewMetrics(settings.Name, settings.Type, EndpointQuery)
+
+	config := backend.GrafanaConfigFromContext(ctx)
+	ds.rowLimit = defaultRowLimit
+	if ds.EnableRowLimit && config != nil {
+		sqlConfig, err := config.SQL()
+		if err != nil {
+			backend.Logger.Error(fmt.Sprintf("failed setting row limit from sql config: %s", err))
+		} else {
+			ds.rowLimit = sqlConfig.RowLimit
+		}
+	}
 
 	return ds, nil
 }
@@ -191,7 +207,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.driver().Converters(), fillMode)
+	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
 	res, err := dbQuery.Run(ctx, q, args...)
 	if err == nil {
 		return res, nil
@@ -217,7 +233,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 					time.Sleep(time.Duration(ds.DriverSettings().Pause * int(time.Second)))
 				}
 
-				dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode)
+				dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
 				res, err = dbQuery.Run(ctx, q, args...)
 				if err == nil {
 					return res, err
@@ -239,7 +255,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				continue
 			}
 
-			dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode)
+			dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
 			res, err = dbQuery.Run(ctx, q, args...)
 			if err == nil {
 				return res, err
@@ -288,4 +304,8 @@ func (ds *SQLDatasource) errors(response *Response) error {
 		backend.Logger.Error(err.Error())
 	}
 	return err
+}
+
+func (ds *SQLDatasource) GetRowLimit() int64 {
+	return ds.rowLimit
 }
