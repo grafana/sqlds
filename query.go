@@ -57,15 +57,17 @@ type DBQuery struct {
 	metrics    Metrics
 	DSName     string
 	converters []sqlutil.Converter
+	rowLimit   int64
 }
 
-func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing) *DBQuery {
+func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing, rowLimit int64) *DBQuery {
 	return &DBQuery{
 		DB:         db,
 		DSName:     settings.Name,
 		converters: converters,
 		fillMode:   fillMode,
 		metrics:    NewMetrics(settings.Name, settings.Type, EndpointQuery),
+		rowLimit:   rowLimit,
 	}
 }
 
@@ -105,14 +107,14 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 
 	start = time.Now()
 	// Convert the response to frames
-	res, err := getFrames(rows, -1, q.converters, q.fillMode, query)
+	res, err := getFrames(rows, q.rowLimit, q.converters, q.fillMode, query)
 	if err != nil {
 		// We default to plugin error source
 		errSource := backend.ErrorSourcePlugin
 		if backend.IsDownstreamHTTPError(err) || isProcessingDownstreamError(err) {
 			errSource = backend.ErrorSourceDownstream
 		}
-		errWithSource := backend.NewErrorWithSource(fmt.Errorf("%w: %s", err, "Could not process SQL results"), errSource)	
+		errWithSource := backend.NewErrorWithSource(fmt.Errorf("%w: %s", err, "Could not process SQL results"), errSource)
 		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
