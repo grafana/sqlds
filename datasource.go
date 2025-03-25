@@ -68,6 +68,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	if err != nil {
 		return nil, backend.DownstreamError(err)
 	}
+
 	ds.connector = conn
 	mux := http.NewServeMux()
 	err = ds.registerRoutes(mux)
@@ -78,8 +79,11 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	ds.CallResourceHandler = httpadapter.New(mux)
 	ds.metrics = NewMetrics(settings.Name, settings.Type, EndpointQuery)
 
+	if !ds.EnableRowLimit {
+		ds.rowLimit = defaultRowLimit
+	}
+
 	config := backend.GrafanaConfigFromContext(ctx)
-	ds.rowLimit = defaultRowLimit
 	if ds.EnableRowLimit && config != nil {
 		sqlConfig, err := config.SQL()
 		if err != nil {
@@ -87,6 +91,11 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 		} else {
 			ds.rowLimit = sqlConfig.RowLimit
 		}
+	}
+
+	settingsLimit := conn.driverSettings.RowLimit
+	if settingsLimit != 0 {
+		ds.rowLimit = settingsLimit
 	}
 
 	return ds, nil
@@ -308,4 +317,9 @@ func (ds *SQLDatasource) errors(response *Response) error {
 
 func (ds *SQLDatasource) GetRowLimit() int64 {
 	return ds.rowLimit
+}
+
+func (ds *SQLDatasource) SetDefaultRowLimit(limit int64) {
+	ds.EnableRowLimit = true
+	ds.rowLimit = limit
 }

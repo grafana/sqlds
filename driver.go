@@ -20,6 +20,7 @@ type DriverSettings struct {
 	Pause          int
 	ForwardHeaders bool
 	Errors         bool
+	RowLimit       int64
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
