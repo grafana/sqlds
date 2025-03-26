@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,12 +16,14 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 )
 
 const defaultKeySuffix = "default"
 const defaultRowLimit = int64(-1)
+const envRowLimit = "GF_DATAPROXY_ROW_LIMIT"
 
 var (
 	ErrorMissingMultipleConnectionsConfig = backend.PluginError(errors.New("received connection arguments but the feature is not enabled"))
@@ -79,24 +83,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	ds.CallResourceHandler = httpadapter.New(mux)
 	ds.metrics = NewMetrics(settings.Name, settings.Type, EndpointQuery)
 
-	if !ds.EnableRowLimit {
-		ds.rowLimit = defaultRowLimit
-	}
-
-	config := backend.GrafanaConfigFromContext(ctx)
-	if ds.EnableRowLimit && config != nil {
-		sqlConfig, err := config.SQL()
-		if err != nil {
-			backend.Logger.Error(fmt.Sprintf("failed setting row limit from sql config: %s", err))
-		} else {
-			ds.rowLimit = sqlConfig.RowLimit
-		}
-	}
-
-	settingsLimit := conn.driverSettings.RowLimit
-	if settingsLimit != 0 {
-		ds.rowLimit = settingsLimit
-	}
+	ds.rowLimit = ds.newRowLimit(ctx, conn)
 
 	return ds, nil
 }
@@ -322,4 +309,50 @@ func (ds *SQLDatasource) GetRowLimit() int64 {
 func (ds *SQLDatasource) SetDefaultRowLimit(limit int64) {
 	ds.EnableRowLimit = true
 	ds.rowLimit = limit
+}
+
+// newRowLimit returns the row limit for the datasource
+// It checks in the following order:
+// 1. set in the datasource configuration page
+// 2. set via the environment variable
+// 3. set is set on grafana_ini and passed via grafana context
+// 4. default row limit set by SetDefaultRowLimit
+func (ds *SQLDatasource) newRowLimit(ctx context.Context, conn *Connector) int64 {
+	if !ds.EnableRowLimit {
+		return defaultRowLimit
+	}
+
+	// Handles when row limit is set in the datasource configuration page
+	settingsLimit := conn.driverSettings.RowLimit
+	if settingsLimit != 0 {
+		return settingsLimit
+	}
+
+	// Handles when row limit is set via environment variable
+	envLimit := os.Getenv(envRowLimit)
+	if envLimit != "" {
+		l, err := strconv.ParseInt(envLimit, 10, 64)
+		if err == nil && l >= 0 {
+			return l
+		}
+		log.DefaultLogger.Error(fmt.Sprintf("failed setting row limit from environment variable: %s", err))
+	}
+
+	// Handles row limit from sql config from grafana instance
+	config := backend.GrafanaConfigFromContext(ctx)
+	if ds.EnableRowLimit && config != nil {
+		sqlConfig, err := config.SQL()
+		if err != nil {
+			backend.Logger.Error(fmt.Sprintf("failed setting row limit from sql config: %s", err))
+		} else {
+			return sqlConfig.RowLimit
+		}
+	}
+
+	// handles SetDefaultRowLimit where it is set before the datasource is initialized
+	if ds.rowLimit != 0 {
+		return ds.rowLimit
+	}
+
+	return defaultRowLimit
 }

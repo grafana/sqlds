@@ -2,6 +2,7 @@ package sqlds_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -22,14 +23,18 @@ func (d *mockDriver) Settings(ctx context.Context, settings backend.DataSourceIn
 	return ds
 }
 
-func TestRowLimitFromConfig(t *testing.T) {
-	// Create a mock config using the proper API
-	mockConfig := backend.NewGrafanaCfg(map[string]string{
-		"GF_SQL_ROW_LIMIT":                         "200",
+func getMockGrafanaCfg(rowLimit string) *backend.GrafanaCfg {
+	// needs all these properties to be set to avoid errors
+	return backend.NewGrafanaCfg(map[string]string{
+		"GF_SQL_ROW_LIMIT":                         rowLimit,
 		"GF_SQL_MAX_OPEN_CONNS_DEFAULT":            "10",
 		"GF_SQL_MAX_IDLE_CONNS_DEFAULT":            "5",
 		"GF_SQL_MAX_CONN_LIFETIME_SECONDS_DEFAULT": "3600",
 	})
+}
+func TestRowLimitFromConfig(t *testing.T) {
+	// Create a mock config using the proper API
+	mockConfig := getMockGrafanaCfg("200")
 
 	// Create context with config
 	ctx := backend.WithGrafanaConfig(context.Background(), mockConfig)
@@ -69,12 +74,7 @@ func TestRowLimitFromDriverSettings(t *testing.T) {
 
 func TestRowLimitPrecedence(t *testing.T) {
 	// Create a mock config using the proper API
-	mockConfig := backend.NewGrafanaCfg(map[string]string{
-		"dataproxy.row_limit":                      "200",
-		"GF_SQL_MAX_OPEN_CONNS_DEFAULT":            "10",
-		"GF_SQL_MAX_IDLE_CONNS_DEFAULT":            "5",
-		"GF_SQL_MAX_CONN_LIFETIME_SECONDS_DEFAULT": "3600",
-	})
+	mockConfig := getMockGrafanaCfg("200")
 
 	// Create context with config
 	ctx := backend.WithGrafanaConfig(context.Background(), mockConfig)
@@ -97,13 +97,7 @@ func TestRowLimitPrecedence(t *testing.T) {
 
 func TestRowLimitDisabled(t *testing.T) {
 	// Create a mock config using the proper API
-	mockConfig := backend.NewGrafanaCfg(map[string]string{
-		"GF_SQL_ROW_LIMIT":                         "200",
-		"GF_SQL_MAX_OPEN_CONNS_DEFAULT":            "10",
-		"GF_SQL_MAX_IDLE_CONNS_DEFAULT":            "5",
-		"GF_SQL_MAX_CONN_LIFETIME_SECONDS_DEFAULT": "3600",
-	})
-
+	mockConfig := getMockGrafanaCfg("200")
 	// Create context with config
 	ctx := backend.WithGrafanaConfig(context.Background(), mockConfig)
 
@@ -222,4 +216,83 @@ func TestRowLimitPassedToQuery(t *testing.T) {
 	frame := queryResp.Frames[0]
 	rowCount, _ := frame.RowLen()
 	assert.Equal(t, 2, rowCount)
+}
+
+func TestRowLimitFromEnvVar(t *testing.T) {
+	// Save original env var value to restore later
+	originalValue, originalExists := os.LookupEnv("GF_DATAPROXY_ROW_LIMIT")
+
+	// Clean up after test
+	defer func() {
+		if originalExists {
+			os.Setenv("GF_DATAPROXY_ROW_LIMIT", originalValue)
+		} else {
+			os.Unsetenv("GF_DATAPROXY_ROW_LIMIT")
+		}
+	}()
+
+	tests := []struct {
+		name           string
+		envValue       string
+		expectedLimit  int64
+		configValue    string
+		driverRowLimit int64
+	}{
+		{
+			name:          "valid env var",
+			envValue:      "400",
+			expectedLimit: 400,
+		},
+		{
+			name:          "invalid env var",
+			envValue:      "not-a-number",
+			expectedLimit: -1,
+		},
+		{
+			name:          "negative env var",
+			envValue:      "-10",
+			expectedLimit: -1,
+		},
+		{
+			name:          "env var precedence over config",
+			envValue:      "400",
+			configValue:   "200",
+			expectedLimit: 400,
+		},
+		{
+			name:           "driver settings precedence over env var",
+			envValue:       "400",
+			driverRowLimit: 300,
+			expectedLimit:  300,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set env var for test
+			os.Setenv("GF_DATAPROXY_ROW_LIMIT", tt.envValue)
+
+			// Create context with config if needed
+			ctx := context.Background()
+			if tt.configValue != "" {
+				mockConfig := getMockGrafanaCfg(tt.configValue)
+				ctx = backend.WithGrafanaConfig(ctx, mockConfig)
+			}
+
+			// Create datasource with driver that may have row limit
+			driver := &mockDriver{rowLimit: tt.driverRowLimit}
+			ds := sqlds.NewDatasource(driver)
+			ds.EnableRowLimit = true
+
+			// Create settings and initialize datasource
+			settings := backend.DataSourceInstanceSettings{UID: "rowlimit-env-" + tt.name, JSONData: []byte("{}")}
+			instance, err := ds.NewDatasource(ctx, settings)
+			require.NoError(t, err)
+
+			// Verify row limit was set correctly
+			sqlDS, ok := instance.(*sqlds.SQLDatasource)
+			require.True(t, ok)
+			assert.Equal(t, tt.expectedLimit, sqlDS.GetRowLimit())
+		})
+	}
 }
