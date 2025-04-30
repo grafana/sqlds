@@ -4,6 +4,9 @@ on:
     types: [labeled]
 jobs:
   main:
+    permissions:
+      contents: read
+      issues: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Actions
@@ -12,6 +15,7 @@ jobs:
           repository: "grafana/grafana-github-actions"
           path: ./actions
           ref: main
+          persist-credentials: false
       - name: Install Actions
         run: npm install --production --prefix ./actions
       - name: Run Commands
