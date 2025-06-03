@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -119,6 +120,28 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
 		go func(query backend.DataQuery) {
+			defer wg.Done()
+
+			// Panic recovery
+			defer func() {
+				if r := recover(); r != nil {
+					stack := string(debug.Stack())
+					errorMsg := fmt.Sprintf("SQL datasource query execution panic: %v", r)
+
+					backend.Logger.Error(errorMsg,
+						"panic", r,
+						"query", query,
+						"refID", query.RefID,
+						"stack", stack)
+
+					response.Set(query.RefID, backend.DataResponse{
+						Frames:      nil,
+						Error:       backend.PluginError(errors.New(errorMsg)),
+						ErrorSource: backend.ErrorSourcePlugin,
+					})
+				}
+			}()
+
 			frames, err := ds.handleQuery(ctx, query, headers)
 			if err == nil {
 				if responseMutator, ok := ds.driver().(ResponseMutator); ok {
@@ -134,8 +157,6 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 				Error:       err,
 				ErrorSource: ErrorSource(err),
 			})
-
-			wg.Done()
 		}(q)
 	}
 
