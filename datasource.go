@@ -134,11 +134,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 						"refID", query.RefID,
 						"stack", stack)
 
-					response.Set(query.RefID, backend.DataResponse{
-						Frames:      nil,
-						Error:       backend.PluginError(errors.New(errorMsg)),
-						ErrorSource: backend.ErrorSourcePlugin,
-					})
+					response.Set(query.RefID, backend.ErrorResponseWithErrorSource(backend.PluginError(errors.New(errorMsg))))
 				}
 			}()
 
