@@ -191,6 +191,38 @@ func Test_default_macro_errors(t *testing.T) {
 	}
 }
 
+func Test_query_panic_recovery(t *testing.T) {
+	cfg := `{ "timeout": 0, "retries": 0, "retryOn": [] }`
+	opts := test.DriverOpts{}
+
+	// Create a macro that triggers a panic
+	panicMacro := func(query *sqlds.Query, args []string) (string, error) {
+		panic("Random panic for testing purposes")
+	}
+	macros := sqlds.Macros{
+		"panicTest": panicMacro,
+	}
+
+	req, _, ds := queryRequest(t, "panic-test", opts, cfg, macros)
+
+	// Set up a query that uses the panic-triggering macro
+	req.Queries[0].JSON = []byte(`{ "rawSql": "SELECT $__panicTest() FROM test_table;" }`)
+
+	// Execute the query
+	data, err := ds.QueryData(context.Background(), req)
+
+	// Verify that the panic was caught and converted to an error
+	assert.Nil(t, err)
+	assert.NotNil(t, data.Responses)
+
+	res := data.Responses["foo"]
+	assert.NotNil(t, res.Error)
+	assert.Equal(t, backend.ErrorSourcePlugin, res.ErrorSource)
+	assert.Contains(t, res.Error.Error(), "SQL datasource query execution panic")
+	assert.Contains(t, res.Error.Error(), "Random panic for testing purposes")
+	assert.Nil(t, res.Frames)
+}
+
 func queryRequest(t *testing.T, name string, opts test.DriverOpts, cfg string, marcos sqlds.Macros) (*backend.QueryDataRequest, *test.SqlHandler, *sqlds.SQLDatasource) {
 	driver, handler := test.NewDriver(name, test.Data{}, nil, opts, marcos)
 	ds := sqlds.NewDatasource(driver)
