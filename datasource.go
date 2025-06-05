@@ -130,7 +130,6 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 					backend.Logger.Error(errorMsg,
 						"panic", r,
-						"query", query,
 						"refID", query.RefID,
 						"stack", stack)
 
