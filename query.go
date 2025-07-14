@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"time"
 
+	"runtime/debug"
+
 	"github.com/grafana/dataplane/sdata/timeseries"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
@@ -123,7 +125,14 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	return res, nil
 }
 
+// getFrames converts rows to dataframes
 func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+	// Validate rows before processing to prevent panics
+	if err := validateRows(rows); err != nil {
+		backend.Logger.Error("Invalid SQL rows", "error", err.Error())
+		return nil, err
+	}
+
 	frame, err := sqlutil.FrameFromRows(rows, limit, converters...)
 	if err != nil {
 		return nil, err
@@ -183,6 +192,37 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 		}
 	}
 	return data.Frames{frame}, nil
+}
+
+// validateRows performs safety checks on SQL rows to prevent panics
+func validateRows(rows *sql.Rows) error {
+	if rows == nil {
+		return fmt.Errorf("rows is nil")
+	}
+
+	// Safely check if we can access columns without panicking
+	var columnErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Don't include stack trace in error to prevent information leaks
+				columnErr = fmt.Errorf("panic accessing columns: %v", r)
+
+				// Log stack trace separately at debug level for debugging
+				stack := string(debug.Stack())
+				backend.Logger.Debug("validateRows panic stack trace", "stack", stack)
+			}
+		}()
+
+		// Try to access columns which is often where nil pointer panics occur
+		_, columnErr = rows.Columns()
+	}()
+
+	if columnErr != nil {
+		return fmt.Errorf("failed to validate rows: %w", columnErr)
+	}
+
+	return nil
 }
 
 // fixFrameForLongToMulti edits the passed in frame so that it's first time field isn't nullable and has the correct meta
