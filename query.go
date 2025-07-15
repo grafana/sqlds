@@ -194,34 +194,31 @@ func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fill
 	return data.Frames{frame}, nil
 }
 
+// accessColumns checks whether we can access rows.Columns, checking
+// for error or panic. In the case of panic, logs the stack trace at debug level
+// for security
+func accessColumns(rows *sql.Rows) (columnErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			columnErr = fmt.Errorf("panic accessing columns: %v", r)
+			stack := string(debug.Stack())
+			backend.Logger.Debug("accessColumns panic stack trace", "stack", stack)
+		}
+	}()
+	_, columnErr = rows.Columns()
+	return columnErr
+}
+
 // validateRows performs safety checks on SQL rows to prevent panics
 func validateRows(rows *sql.Rows) error {
 	if rows == nil {
 		return fmt.Errorf("rows is nil")
 	}
 
-	// Safely check if we can access columns without panicking
-	var columnErr error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// Don't include stack trace in error to prevent information leaks
-				columnErr = fmt.Errorf("panic accessing columns: %v", r)
-
-				// Log stack trace separately at debug level for debugging
-				stack := string(debug.Stack())
-				backend.Logger.Debug("validateRows panic stack trace", "stack", stack)
-			}
-		}()
-
-		// Try to access columns which is often where nil pointer panics occur
-		_, columnErr = rows.Columns()
-	}()
-
-	if columnErr != nil {
-		return fmt.Errorf("failed to validate rows: %w", columnErr)
+	err := accessColumns(rows)
+	if err != nil {
+		return fmt.Errorf("failed to validate rows: %w", err)
 	}
-
 	return nil
 }
 
