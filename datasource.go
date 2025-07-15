@@ -128,12 +128,22 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 					stack := string(debug.Stack())
 					errorMsg := fmt.Sprintf("SQL datasource query execution panic: %v", r)
 
+					// Log panic without sensitive query data
 					backend.Logger.Error(errorMsg,
 						"panic", r,
 						"refID", query.RefID,
-						"stack", stack)
+						"queryType", query.QueryType,
+						"maxDataPoints", query.MaxDataPoints,
+						"interval", query.Interval)
 
-					response.Set(query.RefID, backend.ErrorResponseWithErrorSource(backend.PluginError(errors.New(errorMsg))))
+					// Log stack trace separately at debug level to avoid exposing in production
+					backend.Logger.Debug("Panic stack trace", "stack", stack)
+
+					response.Set(query.RefID, backend.DataResponse{
+						Frames:      nil,
+						Error:       backend.PluginError(errors.New(errorMsg)),
+						ErrorSource: backend.ErrorSourcePlugin,
+					})
 				}
 			}()
 

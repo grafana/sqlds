@@ -2,6 +2,8 @@ package sqlds_test
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/grafana/sqlds/v4"
+	"github.com/grafana/sqlds/v4/mock"
 	"github.com/grafana/sqlds/v4/test"
 	"github.com/stretchr/testify/assert"
 )
@@ -223,6 +226,68 @@ func Test_query_panic_recovery(t *testing.T) {
 	assert.Nil(t, res.Frames)
 }
 
+func Test_query_panic_in_rows_validation(t *testing.T) {
+	cfg := `{ "timeout": 0, "retries": 0, "retryOn": [] }`
+	opts := test.DriverOpts{}
+
+	// Set up a driver that returns rows which will cause a panic when accessing columns
+	// This will be caught by our validateRows function
+	customQueryFunc := func(args []driver.Value) (driver.Rows, error) {
+		// Return a panicking rows implementation that will cause a panic when columns are accessed
+		return &panickingRows{}, nil
+	}
+
+	// Create a custom driver with a wrapper for the query method
+	driverName := "panic-rows-test"
+
+	// Create and register the handler
+	handler := test.NewDriverHandler(test.Data{}, opts)
+
+	// Create a custom handler that overrides the Query method
+	customHandler := &panickingDBHandler{
+		SqlHandler:      handler,
+		customQueryFunc: customQueryFunc,
+	}
+
+	mock.RegisterDriver(driverName, customHandler)
+
+	// Create datasource with the custom driver
+	testDS := &testDriver{driverName: driverName}
+	ds := sqlds.NewDatasource(testDS)
+
+	// Set up the query request
+	req, settings := setupQueryRequest("panic-rows-validation", cfg)
+	_, err := ds.NewDatasource(context.Background(), settings)
+	assert.Nil(t, err)
+
+	// Execute the query
+	data, err := ds.QueryData(context.Background(), req)
+
+	// Verify that the panic was caught and converted to an error
+	assert.Nil(t, err)
+	assert.NotNil(t, data.Responses)
+
+	res := data.Responses["foo"]
+	assert.NotNil(t, res.Error)
+	assert.Contains(t, res.Error.Error(), "failed to validate rows")
+	assert.NotNil(t, res.Frames) // Error frame is returned, not nil
+}
+
+// panickingRows is a custom rows implementation that panics when columns are accessed
+type panickingRows struct{}
+
+func (r *panickingRows) Columns() []string {
+	panic("panic in Columns method")
+}
+
+func (r *panickingRows) Close() error {
+	return nil
+}
+
+func (r *panickingRows) Next(dest []driver.Value) error {
+	return nil
+}
+
 func queryRequest(t *testing.T, name string, opts test.DriverOpts, cfg string, marcos sqlds.Macros) (*backend.QueryDataRequest, *test.SqlHandler, *sqlds.SQLDatasource) {
 	driver, handler := test.NewDriver(name, test.Data{}, nil, opts, marcos)
 	ds := sqlds.NewDatasource(driver)
@@ -268,4 +333,51 @@ func setupHealthRequest(id string, cfg string) (backend.CheckHealthRequest, back
 		},
 	}
 	return req, settings
+}
+
+// testDriver implements sqlds.Driver interface for testing
+type testDriver struct {
+	driverName string
+}
+
+func (d *testDriver) Connect(ctx context.Context, cfg backend.DataSourceInstanceSettings, msg json.RawMessage) (*sql.DB, error) {
+	return sql.Open(d.driverName, "")
+}
+
+func (d *testDriver) Settings(ctx context.Context, config backend.DataSourceInstanceSettings) sqlds.DriverSettings {
+	settings, _ := test.LoadSettings(ctx, config)
+	return settings
+}
+
+func (d *testDriver) Macros() sqlds.Macros {
+	return nil
+}
+
+func (d *testDriver) Converters() []sqlutil.Converter {
+	return nil
+}
+
+// panickingDBHandler implements mock.DBHandler and causes panics when querying
+type panickingDBHandler struct {
+	test.SqlHandler
+	customQueryFunc func(args []driver.Value) (driver.Rows, error)
+}
+
+func (h *panickingDBHandler) Query(args []driver.Value) (driver.Rows, error) {
+	if h.customQueryFunc != nil {
+		return h.customQueryFunc(args)
+	}
+	return h.SqlHandler.Query(args)
+}
+
+func (h *panickingDBHandler) Ping(ctx context.Context) error {
+	return nil
+}
+
+func (h *panickingDBHandler) Columns() []string {
+	return []string{"test_column"}
+}
+
+func (h *panickingDBHandler) Next(dest []driver.Value) error {
+	return errors.New("no more rows")
 }
