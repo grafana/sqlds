@@ -243,7 +243,7 @@ func TestPGXErrorClassification(t *testing.T) {
 			name:           "nil pointer dereference",
 			errorMsg:       "runtime error: invalid memory address or nil pointer dereference",
 			expectedSource: backend.ErrorSourceDownstream,
-			expectedIsPGX:  true,
+			expectedIsPGX:  false, // Now handled as generic downstream error
 		},
 		{
 			name:           "connection closed",
@@ -288,11 +288,64 @@ func TestPGXErrorClassification(t *testing.T) {
 			}
 
 			// Test isProcessingDownstreamError
-			if tt.expectedIsPGX {
+			if tt.expectedSource == backend.ErrorSourceDownstream {
 				isDownstream := isProcessingDownstreamError(err)
 				if !isDownstream {
-					t.Errorf("isProcessingDownstreamError() = %v, expected true for PGX error", isDownstream)
+					t.Errorf("isProcessingDownstreamError() = %v, expected true for downstream error", isDownstream)
 				}
+			}
+		})
+	}
+}
+
+func TestIsGenericDownstreamError(t *testing.T) {
+	tests := []struct {
+		name     string
+		errorMsg string
+		expected bool
+	}{
+		{
+			name:     "nil pointer dereference",
+			errorMsg: "runtime error: invalid memory address or nil pointer dereference",
+			expected: true,
+		},
+		{
+			name:     "invalid memory address",
+			errorMsg: "runtime error: invalid memory address",
+			expected: true,
+		},
+		{
+			name:     "nil pointer dereference uppercase",
+			errorMsg: "NIL POINTER DEREFERENCE",
+			expected: true,
+		},
+		{
+			name:     "regular SQL error",
+			errorMsg: "syntax error at position 1",
+			expected: false,
+		},
+		{
+			name:     "connection error",
+			errorMsg: "connection closed",
+			expected: false,
+		},
+		{
+			name:     "nil error",
+			errorMsg: "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			if tt.errorMsg != "" {
+				err = errors.New(tt.errorMsg)
+			}
+
+			result := IsGenericDownstreamError(err)
+			if result != tt.expected {
+				t.Errorf("IsGenericDownstreamError(%v) = %v, expected %v", tt.errorMsg, result, tt.expected)
 			}
 		})
 	}

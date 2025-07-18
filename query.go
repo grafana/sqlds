@@ -322,7 +322,12 @@ func isProcessingDownstreamError(err error) bool {
 		}
 	}
 
-	// Also check for PGX connection errors using the new function
+	// Check for generic downstream errors
+	if IsGenericDownstreamError(err) {
+		return true
+	}
+
+	// Check for PGX connection errors
 	if IsPGXConnectionError(err) {
 		return true
 	}
