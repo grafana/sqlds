@@ -78,14 +78,19 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 	start := time.Now()
 	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
-		// Use enhanced error classification for PGX v5
-		errSource, _ := ClassifyError(err)
-
+		// Determine error source based on retry configuration and error type
+		errSource := backend.ErrorSourcePlugin
 		errType := ErrorQuery
+
 		if errors.Is(err, context.Canceled) {
 			errType = context.Canceled
+			errSource = backend.ErrorSourcePlugin
 		} else if IsPGXConnectionError(err) {
 			errType = ErrorPGXLifecycle
+			errSource = backend.ErrorSourceDownstream
+		} else {
+			// Use enhanced error classification for PGX v5
+			errSource, _ = ClassifyError(err)
 		}
 
 		var errWithSource error
