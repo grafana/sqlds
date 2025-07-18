@@ -231,3 +231,69 @@ func TestIsProcessingDownstreamError(t *testing.T) {
 		})
 	}
 }
+
+func TestPGXErrorClassification(t *testing.T) {
+	tests := []struct {
+		name           string
+		errorMsg       string
+		expectedSource backend.ErrorSource
+		expectedIsPGX  bool
+	}{
+		{
+			name:           "nil pointer dereference",
+			errorMsg:       "runtime error: invalid memory address or nil pointer dereference",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "connection closed",
+			errorMsg:       "connection closed",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "broken pipe",
+			errorMsg:       "broken pipe",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "pgconn error",
+			errorMsg:       "pgconn: connection failed",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "regular SQL error",
+			errorMsg:       "syntax error at position 1",
+			expectedSource: backend.ErrorSourcePlugin,
+			expectedIsPGX:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := errors.New(tt.errorMsg)
+
+			// Test IsPGXConnectionError
+			isPGX := IsPGXConnectionError(err)
+			if isPGX != tt.expectedIsPGX {
+				t.Errorf("IsPGXConnectionError() = %v, expected %v", isPGX, tt.expectedIsPGX)
+			}
+
+			// Test ClassifyError
+			source, _ := ClassifyError(err)
+			if source != tt.expectedSource {
+				t.Errorf("ClassifyError() source = %v, expected %v", source, tt.expectedSource)
+			}
+
+			// Test isProcessingDownstreamError
+			if tt.expectedIsPGX {
+				isDownstream := isProcessingDownstreamError(err)
+				if !isDownstream {
+					t.Errorf("isProcessingDownstreamError() = %v, expected true for PGX error", isDownstream)
+				}
+			}
+		})
+	}
+}

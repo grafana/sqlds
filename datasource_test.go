@@ -269,7 +269,7 @@ func Test_query_panic_in_rows_validation(t *testing.T) {
 
 	res := data.Responses["foo"]
 	assert.NotNil(t, res.Error)
-	assert.Contains(t, res.Error.Error(), "failed to validate rows")
+	assert.Contains(t, res.Error.Error(), "SQL rows validation failed")
 	assert.NotNil(t, res.Frames) // Error frame is returned, not nil
 }
 
