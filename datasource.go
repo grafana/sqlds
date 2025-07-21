@@ -268,6 +268,14 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		}
 	}
 
+	// Check if the error is retryable and convert to downstream error if so
+	if errors.Is(err, ErrorQuery) && shouldRetry(ds.DriverSettings().RetryOn, err.Error()) {
+		// Convert retryable errors to downstream errors
+		if !backend.IsDownstreamError(err) {
+			err = backend.DownstreamError(err)
+		}
+	}
+
 	// allow retries on timeouts
 	if errors.Is(err, context.DeadlineExceeded) {
 		for i := 0; i < ds.DriverSettings().Retries; i++ {

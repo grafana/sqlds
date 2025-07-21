@@ -231,3 +231,122 @@ func TestIsProcessingDownstreamError(t *testing.T) {
 		})
 	}
 }
+
+func TestPGXErrorClassification(t *testing.T) {
+	tests := []struct {
+		name           string
+		errorMsg       string
+		expectedSource backend.ErrorSource
+		expectedIsPGX  bool
+	}{
+		{
+			name:           "nil pointer dereference",
+			errorMsg:       "runtime error: invalid memory address or nil pointer dereference",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  false, // Now handled as generic downstream error
+		},
+		{
+			name:           "connection closed",
+			errorMsg:       "connection closed",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "broken pipe",
+			errorMsg:       "broken pipe",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "pgconn error",
+			errorMsg:       "pgconn: connection failed",
+			expectedSource: backend.ErrorSourceDownstream,
+			expectedIsPGX:  true,
+		},
+		{
+			name:           "regular SQL error",
+			errorMsg:       "syntax error at position 1",
+			expectedSource: backend.ErrorSourcePlugin,
+			expectedIsPGX:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := errors.New(tt.errorMsg)
+
+			// Test IsPGXConnectionError
+			isPGX := IsPGXConnectionError(err)
+			if isPGX != tt.expectedIsPGX {
+				t.Errorf("IsPGXConnectionError() = %v, expected %v", isPGX, tt.expectedIsPGX)
+			}
+
+			// Test ClassifyError
+			source, _ := ClassifyError(err)
+			if source != tt.expectedSource {
+				t.Errorf("ClassifyError() source = %v, expected %v", source, tt.expectedSource)
+			}
+
+			// Test isProcessingDownstreamError
+			if tt.expectedSource == backend.ErrorSourceDownstream {
+				isDownstream := isProcessingDownstreamError(err)
+				if !isDownstream {
+					t.Errorf("isProcessingDownstreamError() = %v, expected true for downstream error", isDownstream)
+				}
+			}
+		})
+	}
+}
+
+func TestIsGenericDownstreamError(t *testing.T) {
+	tests := []struct {
+		name     string
+		errorMsg string
+		expected bool
+	}{
+		{
+			name:     "nil pointer dereference",
+			errorMsg: "runtime error: invalid memory address or nil pointer dereference",
+			expected: true,
+		},
+		{
+			name:     "invalid memory address",
+			errorMsg: "runtime error: invalid memory address",
+			expected: true,
+		},
+		{
+			name:     "nil pointer dereference uppercase",
+			errorMsg: "NIL POINTER DEREFERENCE",
+			expected: true,
+		},
+		{
+			name:     "regular SQL error",
+			errorMsg: "syntax error at position 1",
+			expected: false,
+		},
+		{
+			name:     "connection error",
+			errorMsg: "connection closed",
+			expected: false,
+		},
+		{
+			name:     "nil error",
+			errorMsg: "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			if tt.errorMsg != "" {
+				err = errors.New(tt.errorMsg)
+			}
+
+			result := IsGenericDownstreamError(err)
+			if result != tt.expected {
+				t.Errorf("IsGenericDownstreamError(%v) = %v, expected %v", tt.errorMsg, result, tt.expected)
+			}
+		})
+	}
+}
