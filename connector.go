@@ -49,7 +49,7 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnec
 	}
 
 	if c.driverSettings.Retries == 0 {
-		err := c.connect(dbConn)
+		err := c.connect(ctx, dbConn)
 		return nil, err
 	}
 
@@ -74,7 +74,7 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 			db:       db,
 			settings: conn.settings,
 		}
-		err = c.connect(conn)
+		err = c.connect(ctx, conn)
 		if err == nil {
 			break
 		}
@@ -96,20 +96,20 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 	return err
 }
 
-func (c *Connector) connect(conn dbConnection) error {
-	if err := c.ping(conn); err != nil {
+func (c *Connector) connect(ctx context.Context, conn dbConnection) error {
+	if err := c.ping(ctx, conn); err != nil {
 		return backend.DownstreamError(err)
 	}
 
 	return nil
 }
 
-func (c *Connector) ping(conn dbConnection) error {
+func (c *Connector) ping(ctx context.Context, conn dbConnection) error {
 	if c.driverSettings.Timeout == 0 {
-		return conn.db.Ping()
+		return conn.db.PingContext(ctx)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.driverSettings.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.driverSettings.Timeout)
 	defer cancel()
 
 	return conn.db.PingContext(ctx)

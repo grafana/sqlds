@@ -88,13 +88,17 @@ func TestHealthChecker_Check(t *testing.T) {
 			if want == nil {
 				want = &backend.CheckHealthResult{Status: backend.HealthStatusOk, Message: "Data source is working"}
 			}
+			ctx := tt.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
 			hc := &sqlds.HealthChecker{
 				Connector:       connector,
 				Metrics:         tt.Metrics,
 				PreCheckHealth:  tt.PreCheckHealth,
 				PostCheckHealth: tt.PostCheckHealth,
 			}
-			got, err := hc.Check(tt.ctx, req)
+			got, err := hc.Check(ctx, req)
 			if tt.wantErr != nil {
 				require.NotNil(t, err)
 				assert.Equal(t, tt.wantErr.Error(), err.Error())
