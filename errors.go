@@ -62,36 +62,10 @@ func IsPGXConnectionError(err error) bool {
 	return false
 }
 
-// IsGenericDownstreamError checks if an error is a generic downstream error
-func IsGenericDownstreamError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	errStr := strings.ToLower(err.Error())
-	genericDownstreamErrors := []string{
-		"invalid memory address",
-		"nil pointer dereference",
-	}
-
-	for _, genericErr := range genericDownstreamErrors {
-		if strings.Contains(errStr, genericErr) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // ClassifyError determines the appropriate error source and type for SQL errors
 func ClassifyError(err error) (backend.ErrorSource, error) {
 	if err == nil {
 		return backend.ErrorSourcePlugin, nil
-	}
-
-	// Check for generic downstream errors first
-	if IsGenericDownstreamError(err) {
-		return backend.ErrorSourceDownstream, err
 	}
 
 	// Check for PGX v5 specific connection errors

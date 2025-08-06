@@ -84,7 +84,7 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 
 		if errors.Is(err, context.Canceled) {
 			errType = context.Canceled
-			errSource = backend.ErrorSourcePlugin
+			errSource = backend.ErrorSourceDownstream
 		} else if IsPGXConnectionError(err) {
 			errType = ErrorPGXLifecycle
 			errSource = backend.ErrorSourceDownstream
@@ -320,11 +320,6 @@ func isProcessingDownstreamError(err error) bool {
 		if errors.Is(err, e) {
 			return true
 		}
-	}
-
-	// Check for generic downstream errors
-	if IsGenericDownstreamError(err) {
-		return true
 	}
 
 	// Check for PGX connection errors
