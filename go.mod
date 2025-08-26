@@ -11,7 +11,7 @@ require (
 	github.com/grafana/grafana-plugin-sdk-go v0.278.0
 	github.com/mithrandie/csvq-driver v1.7.0
 	github.com/prometheus/client_golang v1.23.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 )
 
 require (
