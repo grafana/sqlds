@@ -1,6 +1,6 @@
 module github.com/grafana/sqlds/v4
 
-go 1.23.12
+go 1.24.6
 
 require (
 	github.com/go-sql-driver/mysql v1.9.3
