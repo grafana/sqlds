@@ -268,6 +268,89 @@ func TestRun_WithDownStreamErrorMutator(t *testing.T) {
 	require.True(t, mockMutator.called, "ErrorMutator should have been called")
 }
 
+func TestRun_ErrorQueryWrapping(t *testing.T) {
+	t.Run("query errors are wrapped with ErrorQuery for retry logic", func(t *testing.T) {
+		ctx := context.Background()
+		conn := &testConnection{
+			QueryWait: 0,
+		}
+		settings := backend.DataSourceInstanceSettings{
+			Name: "test",
+		}
+
+		query := &Query{
+			RawSQL: "SELECT * FROM test",
+			RefID:  "A",
+		}
+
+		dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+		_, err := dbQuery.Run(ctx, query, nil)
+
+		require.Error(t, err)
+		// Verify the error is wrapped with ErrorQuery to enable retry logic in datasource.go
+		require.True(t, errors.Is(err, ErrorQuery), "Error should be wrapped with ErrorQuery for retry detection")
+		// Verify the original error is preserved in the chain
+		require.True(t, errors.Is(err, errorQueryCompleted), "Original error should be preserved")
+	})
+
+	t.Run("context.Canceled is NOT wrapped with ErrorQuery", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		conn := &testConnection{
+			QueryWait: 0,
+		}
+		settings := backend.DataSourceInstanceSettings{
+			Name: "test",
+		}
+
+		query := &Query{
+			RawSQL: "SELECT * FROM test",
+			RefID:  "A",
+		}
+
+		dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+		_, err := dbQuery.Run(ctx, query, nil)
+
+		require.Error(t, err)
+		// Context cancellation should NOT be wrapped with ErrorQuery
+		require.True(t, errors.Is(err, context.Canceled), "Error should be context.Canceled")
+		// Verify it's classified as downstream error
+		var errWithSource backend.ErrorWithSource
+		require.True(t, errors.As(err, &errWithSource), "Error should implement ErrorWithSource")
+		require.Equal(t, backend.ErrorSourceDownstream, errWithSource.ErrorSource())
+	})
+
+	t.Run("QueryErrorMutator receives ErrorQuery-wrapped errors", func(t *testing.T) {
+		ctx := context.Background()
+		conn := &testConnection{
+			QueryWait: 0,
+		}
+		settings := backend.DataSourceInstanceSettings{
+			Name: "test",
+		}
+
+		query := &Query{
+			RawSQL: "SELECT * FROM test",
+			RefID:  "A",
+		}
+
+		var receivedErr error
+		mockMutator := &mockErrorMutatorWithCapture{
+			capturedErr: &receivedErr,
+		}
+
+		dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+		_, err := dbQuery.Run(ctx, query, mockMutator)
+
+		require.Error(t, err)
+		require.NotNil(t, receivedErr, "Mutator should have received an error")
+		// Verify the mutator received an ErrorQuery-wrapped error
+		require.True(t, errors.Is(receivedErr, ErrorQuery), "Mutator should receive ErrorQuery-wrapped error")
+		require.True(t, errors.Is(receivedErr, errorQueryCompleted), "Original error should be in chain")
+	})
+}
+
 // mockErrorMutator is a simple implementation for testing
 type mockErrorMutator struct {
 	shouldMutate bool
@@ -280,4 +363,16 @@ func (m *mockErrorMutator) MutateQueryError(err error) backend.ErrorWithSource {
 		return backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
 	}
 	return backend.NewErrorWithSource(err, backend.ErrorSourcePlugin)
+}
+
+// mockErrorMutatorWithCapture captures the error it receives for testing
+type mockErrorMutatorWithCapture struct {
+	capturedErr *error
+}
+
+func (m *mockErrorMutatorWithCapture) MutateQueryError(err error) backend.ErrorWithSource {
+	if m.capturedErr != nil {
+		*m.capturedErr = err
+	}
+	return backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
 }

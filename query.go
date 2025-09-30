@@ -78,17 +78,28 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator Query
 	start := time.Now()
 	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
-		// Wrap with ErrorQuery to enable retry logic in datasource
-		queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
-		errWithSource := backend.NewErrorWithSource(queryErr, backend.DefaultErrorSource)
+		var errWithSource backend.ErrorWithSource
+		defer func() {
+			q.metrics.CollectDuration(Source(errWithSource.ErrorSource()), StatusError, time.Since(start).Seconds())
+		}()
 
 		if errors.Is(err, context.Canceled) {
-			errWithSource = backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
-		} else if queryErrorMutator != nil {
-			errWithSource = queryErrorMutator.MutateQueryError(queryErr)
+			errWithSource := backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
+			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
 
-		q.metrics.CollectDuration(Source(errWithSource.ErrorSource()), StatusError, time.Since(start).Seconds())
+		// Wrap with ErrorQuery to enable retry logic in datasource
+		queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
+
+		// Handle driver specific errors
+		if queryErrorMutator != nil {
+			errWithSource = queryErrorMutator.MutateQueryError(queryErr)
+			return sqlutil.ErrorFrameFromQuery(query), errWithSource
+		}
+
+		// If we get to this point, assume the error is from the plugin
+		errWithSource = backend.NewErrorWithSource(queryErr, backend.DefaultErrorSource)
+
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 	q.metrics.CollectDuration(SourceDownstream, StatusOK, time.Since(start).Seconds())
