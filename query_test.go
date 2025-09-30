@@ -242,12 +242,6 @@ func TestNewQuery(t *testing.T) {
 	require.NotNil(t, dbQuery.metrics)
 }
 
-func TestRun_RowsError(t *testing.T) {
-	// Note: This test would require a mock that returns valid rows but with an error
-	// This is difficult to test without a proper mock framework for sql.Rows
-	t.Skip("Requires advanced mocking of sql.Rows")
-}
-
 func TestRun_WithDownStreamErrorMutator(t *testing.T) {
 	ctx := context.Background()
 	conn := &testConnection{
