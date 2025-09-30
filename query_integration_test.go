@@ -80,7 +80,7 @@ func TestQuery_MySQL(t *testing.T) {
 		}
 
 		sqlQuery := NewQuery(db, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
-		_, err := sqlQuery.Run(ctx, q)
+		_, err := sqlQuery.Run(ctx, q, nil)
 		if err == nil {
 			t.Fatal("expected an error but received none")
 		}

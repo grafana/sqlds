@@ -73,3 +73,7 @@ type QueryArgSetter interface {
 type ResponseMutator interface {
 	MutateResponse(ctx context.Context, res data.Frames) (data.Frames, error)
 }
+
+type QueryErrorMutator interface {
+	MutateQueryError(err error) backend.ErrorWithSource
+}
