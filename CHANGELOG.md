@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.0.0]
 - Added QueryErrorMutator (#190)
-- **Breaking change** for plugins that rely on PGX error detection. Removed PGX v5/PostgreSQL-specific error detection (#190)
+- **Breaking change** IsPGXConnectionError has been removed. Removed PGX v5/PostgreSQL-specific error detection (#190)
 
 ## [4.2.7]
 
