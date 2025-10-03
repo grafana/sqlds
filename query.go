@@ -74,55 +74,51 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 }
 
 // Run sends the query to the connection and converts the rows to a dataframe.
-func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (data.Frames, error) {
+func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator QueryErrorMutator, args ...interface{}) (data.Frames, error) {
 	start := time.Now()
 	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
-		// Determine error source based on retry configuration and error type
-		errSource := backend.ErrorSourcePlugin
-		errType := ErrorQuery
+		var errWithSource backend.ErrorWithSource
+		defer func() {
+			q.metrics.CollectDuration(Source(errWithSource.ErrorSource()), StatusError, time.Since(start).Seconds())
+		}()
 
 		if errors.Is(err, context.Canceled) {
-			errType = context.Canceled
-			errSource = backend.ErrorSourceDownstream
-		} else if IsPGXConnectionError(err) {
-			errType = ErrorPGXLifecycle
-			errSource = backend.ErrorSourceDownstream
-		} else {
-			// Use enhanced error classification for PGX v5
-			errSource, _ = ClassifyError(err)
+			errWithSource := backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
+			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
 
-		var errWithSource error
-		if errSource == backend.ErrorSourceDownstream {
-			errWithSource = backend.DownstreamError(fmt.Errorf("%w: %s", errType, err.Error()))
-		} else {
-			errWithSource = backend.PluginError(fmt.Errorf("%w: %s", errType, err.Error()))
+		// Wrap with ErrorQuery to enable retry logic in datasource
+		queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
+
+		// Handle driver specific errors
+		if queryErrorMutator != nil {
+			errWithSource = queryErrorMutator.MutateQueryError(queryErr)
+			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
 
-		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
+		// If we get to this point, assume the error is from the plugin
+		errWithSource = backend.NewErrorWithSource(queryErr, backend.DefaultErrorSource)
+
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 	q.metrics.CollectDuration(SourceDownstream, StatusOK, time.Since(start).Seconds())
 
 	// Check for an error response
 	if err := rows.Err(); err != nil {
+		queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
+		errWithSource := backend.NewErrorWithSource(queryErr, backend.DefaultErrorSource)
 		if errors.Is(err, sql.ErrNoRows) {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
-			errWithSource := backend.DownstreamError(fmt.Errorf("%s: %w", "No results from query", err))
+			errWithSource = backend.NewErrorWithSource(fmt.Errorf("%w: %s", err, "Error response from database"), backend.ErrorSourceDownstream)
 			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
-
-		errSource, _ := ClassifyError(err)
-		var errWithSource error
-		if errSource == backend.ErrorSourceDownstream {
-			errWithSource = backend.DownstreamError(fmt.Errorf("%s: %w", "Error response from database", err))
-		} else {
-			errWithSource = backend.PluginError(fmt.Errorf("%s: %w", "Error response from database", err))
+		if queryErrorMutator != nil {
+			errWithSource = queryErrorMutator.MutateQueryError(queryErr)
 		}
 
-		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
+		q.metrics.CollectDuration(Source(errWithSource.ErrorSource()), StatusError, time.Since(start).Seconds())
 		return sqlutil.ErrorFrameFromQuery(query), errWithSource
 	}
 
@@ -132,23 +128,34 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, args ...interface{}) (d
 		}
 	}()
 
-	start = time.Now()
-	// Convert the response to frames
+	return q.convertRowsToFrames(rows, query, queryErrorMutator)
+}
+
+func (q *DBQuery) convertRowsToFrames(rows *sql.Rows, query *Query, queryErrorMutator QueryErrorMutator) (data.Frames, error) {
+	source := SourcePlugin
+	status := StatusOK
+	start := time.Now()
+	defer func() {
+		q.metrics.CollectDuration(source, status, time.Since(start).Seconds())
+	}()
+
 	res, err := getFrames(rows, q.rowLimit, q.converters, q.fillMode, query)
 	if err != nil {
-		errSource, _ := ClassifyError(err)
+		status = StatusError
 
 		// Additional checks for processing errors
-		if backend.IsDownstreamHTTPError(err) || isProcessingDownstreamError(err) {
-			errSource = backend.ErrorSourceDownstream
+		if backend.IsDownstreamHTTPError(err) {
+			source = SourceDownstream
+		} else if queryErrorMutator != nil {
+			errWithSource := queryErrorMutator.MutateQueryError(err)
+			source = Source(errWithSource.ErrorSource())
 		}
 
-		errWithSource := backend.NewErrorWithSource(fmt.Errorf("%w: %s", err, "Could not process SQL results"), errSource)
-		q.metrics.CollectDuration(Source(errSource), StatusError, time.Since(start).Seconds())
-		return sqlutil.ErrorFrameFromQuery(query), errWithSource
+		return sqlutil.ErrorFrameFromQuery(query), backend.NewErrorWithSource(
+			fmt.Errorf("%w: %s", err, "Could not process SQL results"),
+			backend.ErrorSource(source),
+		)
 	}
-
-	q.metrics.CollectDuration(SourcePlugin, StatusOK, time.Since(start).Seconds())
 	return res, nil
 }
 
@@ -305,27 +312,4 @@ func applyHeaders(query *Query, headers http.Header) *Query {
 	query.ConnectionArgs = raw
 
 	return query
-}
-
-func isProcessingDownstreamError(err error) bool {
-	downstreamErrors := []error{
-		data.ErrorInputFieldsWithoutRows,
-		data.ErrorSeriesUnsorted,
-		data.ErrorNullTimeValues,
-		ErrorRowValidation,
-		ErrorConnectionClosed,
-		ErrorPGXLifecycle,
-	}
-	for _, e := range downstreamErrors {
-		if errors.Is(err, e) {
-			return true
-		}
-	}
-
-	// Check for PGX connection errors
-	if IsPGXConnectionError(err) {
-		return true
-	}
-
-	return false
 }

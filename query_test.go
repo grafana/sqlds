@@ -85,7 +85,7 @@ func TestQuery_Timeout(t *testing.T) {
 		}
 
 		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
-		_, err := sqlQuery.Run(ctx, &Query{})
+		_, err := sqlQuery.Run(ctx, &Query{}, nil)
 
 		if !errors.Is(err, context.Canceled) {
 			t.Fatal("expected error to be context.Canceled, received", err)
@@ -112,9 +112,9 @@ func TestQuery_Timeout(t *testing.T) {
 		}
 
 		sqlQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
-		_, err := sqlQuery.Run(ctx, &Query{})
+		_, err := sqlQuery.Run(ctx, &Query{}, nil)
 
-		if !errors.Is(err, ErrorQuery) {
+		if !errors.Is(err, errorQueryCompleted) {
 			t.Fatal("expected function to complete, received error: ", err)
 		}
 	})
@@ -189,111 +189,190 @@ func TestLabelNameSanitization(t *testing.T) {
 	}
 }
 
-func TestIsProcessingDownstreamError(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      error
-		expected bool
-	}{
-		{
-			name:     "ErrorInputFieldsWithoutRows returns true",
-			err:      data.ErrorInputFieldsWithoutRows,
-			expected: true,
-		},
-		{
-			name:     "ErrorSeriesUnsorted returns true",
-			err:      data.ErrorSeriesUnsorted,
-			expected: true,
-		},
-		{
-			name:     "ErrorNullTimeValues returns true",
-			err:      data.ErrorNullTimeValues,
-			expected: true,
-		},
-		{
-			name:     "Different error returns false",
-			err:      errors.New("some other error"),
-			expected: false,
-		},
-		{
-			name:     "Wrapped downstream error returns true",
-			err:      fmt.Errorf("wrapped: %w", data.ErrorInputFieldsWithoutRows),
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isProcessingDownstreamError(tt.err)
-			if result != tt.expected {
-				t.Errorf("isProcessingDownstreamError(%v) = %v; want %v", tt.err, result, tt.expected)
-			}
-		})
-	}
+func TestValidateRows(t *testing.T) {
+	t.Run("returns error for nil rows", func(t *testing.T) {
+		err := validateRows(nil)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrorRowValidation)
+		require.Contains(t, err.Error(), "rows is nil")
+	})
 }
 
-func TestPGXErrorClassification(t *testing.T) {
-	tests := []struct {
-		name           string
-		errorMsg       string
-		expectedSource backend.ErrorSource
-		expectedIsPGX  bool
-	}{
-		{
-			name:           "nil pointer dereference",
-			errorMsg:       "runtime error: invalid memory address or nil pointer dereference",
-			expectedSource: backend.ErrorSourcePlugin,
-			expectedIsPGX:  false,
-		},
-		{
-			name:           "connection closed",
-			errorMsg:       "connection closed",
-			expectedSource: backend.ErrorSourceDownstream,
-			expectedIsPGX:  true,
-		},
-		{
-			name:           "broken pipe",
-			errorMsg:       "broken pipe",
-			expectedSource: backend.ErrorSourceDownstream,
-			expectedIsPGX:  true,
-		},
-		{
-			name:           "pgconn error",
-			errorMsg:       "pgconn: connection failed",
-			expectedSource: backend.ErrorSourceDownstream,
-			expectedIsPGX:  true,
-		},
-		{
-			name:           "regular SQL error",
-			errorMsg:       "syntax error at position 1",
-			expectedSource: backend.ErrorSourcePlugin,
-			expectedIsPGX:  false,
-		},
+func TestFixFrameForLongToMulti_NilFrame(t *testing.T) {
+	err := fixFrameForLongToMulti(nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "can not convert to wide series, input is nil")
+}
+
+func TestFixFrameForLongToMulti_NonNullableTime(t *testing.T) {
+	time1 := time.UnixMilli(1)
+	time2 := time.UnixMilli(2)
+	frame := data.NewFrame("",
+		data.NewField("time", nil, []time.Time{time1, time2}),
+		data.NewField("host", nil, []string{"a", "b"}),
+		data.NewField("value", nil, []float64{1, 2}),
+	)
+
+	err := fixFrameForLongToMulti(frame)
+	require.NoError(t, err)
+
+	// Verify the frame wasn't modified since time was already non-nullable
+	require.Equal(t, data.FieldTypeTime, frame.Fields[0].Type())
+	require.Equal(t, 2, frame.Fields[0].Len())
+}
+
+func TestNewQuery(t *testing.T) {
+	conn := &testConnection{}
+	settings := backend.DataSourceInstanceSettings{
+		Name: "test-datasource",
+		Type: "test-type",
+	}
+	converters := []sqlutil.Converter{}
+	fillMode := &data.FillMissing{}
+	rowLimit := int64(1000)
+
+	dbQuery := NewQuery(conn, settings, converters, fillMode, rowLimit)
+
+	require.NotNil(t, dbQuery)
+	require.Equal(t, conn, dbQuery.DB)
+	require.Equal(t, "test-datasource", dbQuery.DSName)
+	require.Equal(t, converters, dbQuery.converters)
+	require.Equal(t, fillMode, dbQuery.fillMode)
+	require.Equal(t, rowLimit, dbQuery.rowLimit)
+	require.NotNil(t, dbQuery.metrics)
+}
+
+func TestRun_WithDownStreamErrorMutator(t *testing.T) {
+	ctx := context.Background()
+	conn := &testConnection{
+		QueryWait: 0,
+	}
+	settings := backend.DataSourceInstanceSettings{
+		Name: "test",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := errors.New(tt.errorMsg)
-
-			// Test IsPGXConnectionError
-			isPGX := IsPGXConnectionError(err)
-			if isPGX != tt.expectedIsPGX {
-				t.Errorf("IsPGXConnectionError() = %v, expected %v", isPGX, tt.expectedIsPGX)
-			}
-
-			// Test ClassifyError
-			source, _ := ClassifyError(err)
-			if source != tt.expectedSource {
-				t.Errorf("ClassifyError() source = %v, expected %v", source, tt.expectedSource)
-			}
-
-			// Test isProcessingDownstreamError
-			if tt.expectedSource == backend.ErrorSourceDownstream {
-				isDownstream := isProcessingDownstreamError(err)
-				if !isDownstream {
-					t.Errorf("isProcessingDownstreamError() = %v, expected true for downstream error", isDownstream)
-				}
-			}
-		})
+	query := &Query{
+		RawSQL: "SELECT * FROM test",
+		RefID:  "A",
 	}
+
+	// Create a mock ErrorMutator
+	mockMutator := &mockErrorMutator{
+		shouldMutate: true,
+	}
+
+	dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+	_, err := dbQuery.Run(ctx, query, mockMutator)
+
+	require.Error(t, err)
+	require.True(t, mockMutator.called, "ErrorMutator should have been called")
+}
+
+func TestRun_ErrorQueryWrapping(t *testing.T) {
+	t.Run("query errors are wrapped with ErrorQuery for retry logic", func(t *testing.T) {
+		ctx := context.Background()
+		conn := &testConnection{
+			QueryWait: 0,
+		}
+		settings := backend.DataSourceInstanceSettings{
+			Name: "test",
+		}
+
+		query := &Query{
+			RawSQL: "SELECT * FROM test",
+			RefID:  "A",
+		}
+
+		dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+		_, err := dbQuery.Run(ctx, query, nil)
+
+		require.Error(t, err)
+		// Verify the error is wrapped with ErrorQuery to enable retry logic in datasource.go
+		require.True(t, errors.Is(err, ErrorQuery), "Error should be wrapped with ErrorQuery for retry detection")
+		// Verify the original error is preserved in the chain
+		require.True(t, errors.Is(err, errorQueryCompleted), "Original error should be preserved")
+	})
+
+	t.Run("context.Canceled is NOT wrapped with ErrorQuery", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		conn := &testConnection{
+			QueryWait: 0,
+		}
+		settings := backend.DataSourceInstanceSettings{
+			Name: "test",
+		}
+
+		query := &Query{
+			RawSQL: "SELECT * FROM test",
+			RefID:  "A",
+		}
+
+		dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+		_, err := dbQuery.Run(ctx, query, nil)
+
+		require.Error(t, err)
+		// Context cancellation should NOT be wrapped with ErrorQuery
+		require.True(t, errors.Is(err, context.Canceled), "Error should be context.Canceled")
+		// Verify it's classified as downstream error
+		var errWithSource backend.ErrorWithSource
+		require.True(t, errors.As(err, &errWithSource), "Error should implement ErrorWithSource")
+		require.Equal(t, backend.ErrorSourceDownstream, errWithSource.ErrorSource())
+	})
+
+	t.Run("QueryErrorMutator receives ErrorQuery-wrapped errors", func(t *testing.T) {
+		ctx := context.Background()
+		conn := &testConnection{
+			QueryWait: 0,
+		}
+		settings := backend.DataSourceInstanceSettings{
+			Name: "test",
+		}
+
+		query := &Query{
+			RawSQL: "SELECT * FROM test",
+			RefID:  "A",
+		}
+
+		var receivedErr error
+		mockMutator := &mockErrorMutatorWithCapture{
+			capturedErr: &receivedErr,
+		}
+
+		dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+		_, err := dbQuery.Run(ctx, query, mockMutator)
+
+		require.Error(t, err)
+		require.NotNil(t, receivedErr, "Mutator should have received an error")
+		// Verify the mutator received an ErrorQuery-wrapped error
+		require.True(t, errors.Is(receivedErr, ErrorQuery), "Mutator should receive ErrorQuery-wrapped error")
+		require.True(t, errors.Is(receivedErr, errorQueryCompleted), "Original error should be in chain")
+	})
+}
+
+// mockErrorMutator is a simple implementation for testing
+type mockErrorMutator struct {
+	shouldMutate bool
+	called       bool
+}
+
+func (m *mockErrorMutator) MutateQueryError(err error) backend.ErrorWithSource {
+	m.called = true
+	if m.shouldMutate {
+		return backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
+	}
+	return backend.NewErrorWithSource(err, backend.ErrorSourcePlugin)
+}
+
+// mockErrorMutatorWithCapture captures the error it receives for testing
+type mockErrorMutatorWithCapture struct {
+	capturedErr *error
+}
+
+func (m *mockErrorMutatorWithCapture) MutateQueryError(err error) backend.ErrorWithSource {
+	if m.capturedErr != nil {
+		*m.capturedErr = err
+	}
+	return backend.NewErrorWithSource(err, backend.ErrorSourceDownstream)
 }
