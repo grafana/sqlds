@@ -2,6 +2,7 @@ package sqlds
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -41,7 +42,8 @@ func defaultKey(datasourceUID string) string {
 }
 
 func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) string {
-	return fmt.Sprintf("%s-%s", datasourceUID, string(connArgs))
+	connectionArgsHash := sha256.Sum256(connArgs)
+	return fmt.Sprintf("%s-%x", datasourceUID, connectionArgsHash)
 }
 
 type dbConnection struct {

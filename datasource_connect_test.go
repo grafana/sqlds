@@ -64,7 +64,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			desc:        "it should return the cached connection for the given args",
 			dsUID:       "uid1",
 			args:        "foo",
-			expectedKey: "uid1-foo",
+			expectedKey: "uid1-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
 			existingDB:  db2,
 			expectedDB:  db2,
 		},
@@ -72,7 +72,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			desc:        "it should create a new connection with the given args",
 			dsUID:       "uid1",
 			args:        "foo",
-			expectedKey: "uid1-foo",
+			expectedKey: "uid1-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
 			expectedDB:  db3,
 		},
 	}
