@@ -161,18 +161,22 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 		return "", dbConnection{}, MissingDBConnection
 	}
 	if !c.enableMultipleConnections || len(q.ConnectionArgs) == 0 {
+		backend.Logger.Debug("using single user connection")
 		return key, dbConn, nil
 	}
-
+	
 	key = keyWithConnectionArgs(c.UID, q.ConnectionArgs)
 	if cachedConn, ok := c.getDBConnection(key); ok {
+		backend.Logger.Debug("cached connection")
 		return key, cachedConn, nil
 	}
 
 	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
+		backend.Logger.Debug("connect error " + err.Error())
 		return "", dbConnection{}, backend.DownstreamError(err)
 	}
+	backend.Logger.Debug("new connection(multiple) created")
 	// Assign this connection in the cache
 	dbConn = dbConnection{db, dbConn.settings}
 	c.storeDBConnection(key, dbConn)
