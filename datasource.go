@@ -37,13 +37,12 @@ var (
 	MissingDBConnection = ErrorMissingDBConnection
 )
 
-func defaultKey(datasourceUID string) string {
-	return fmt.Sprintf("%s-%s", datasourceUID, defaultKeySuffix)
-}
-
-func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) string {
-	connectionArgsHash := sha256.Sum256(connArgs)
-	return fmt.Sprintf("%s-%x", datasourceUID, connectionArgsHash)
+func datasourceCacheKey(datasourceUID string, connArgs json.RawMessage) string {
+	suffix := defaultKeySuffix
+	if len(connArgs) > 0 {
+		suffix = fmt.Sprintf("%x", sha256.Sum256(connArgs))
+	}
+	return fmt.Sprintf("%s-%s", datasourceUID, suffix)
 }
 
 type dbConnection struct {
