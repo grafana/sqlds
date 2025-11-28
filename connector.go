@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,11 +13,14 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
+var emptyConnArgs json.RawMessage = nil
+
 type Connector struct {
-	UID            string
-	connections    sync.Map
-	driver         Driver
-	driverSettings DriverSettings
+	UID              string
+	connections      sync.Map
+	driver           Driver
+	driverSettings   DriverSettings
+	instanceSettings backend.DataSourceInstanceSettings
 	// Enabling multiple connections may cause that concurrent connection limits
 	// are hit. The datasource enabling this should make sure connections are cached
 	// if necessary.
@@ -24,8 +28,7 @@ type Connector struct {
 }
 
 func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool) (*Connector, error) {
-	ds := driver.Settings(ctx, settings)
-	db, err := driver.Connect(ctx, settings, nil)
+	db, err := driver.Connect(ctx, settings, emptyConnArgs)
 	if err != nil {
 		return nil, backend.DownstreamError(err)
 	}
@@ -33,17 +36,16 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 	conn := &Connector{
 		UID:                       settings.UID,
 		driver:                    driver,
-		driverSettings:            ds,
+		driverSettings:            driver.Settings(ctx, settings),
 		enableMultipleConnections: enableMultipleConnections,
+		instanceSettings:          settings,
 	}
-	key := defaultKey(settings.UID)
-	conn.storeDBConnection(key, dbConnection{db, settings})
+	conn.storeDBConnection(datasourceCacheKey(settings.UID, emptyConnArgs), dbConnection{db, settings})
 	return conn, nil
 }
 
 func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnection, error) {
-	key := defaultKey(c.UID)
-	dbConn, ok := c.getDBConnection(key)
+	dbConn, ok := c.getDBConnection(datasourceCacheKey(c.UID, emptyConnArgs))
 	if !ok {
 		return nil, ErrorMissingDBConnection
 	}
@@ -53,7 +55,7 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnec
 		return nil, err
 	}
 
-	err := c.connectWithRetries(ctx, dbConn, key, headers)
+	err := c.connectWithRetries(ctx, dbConn, c.UID, headers)
 	return &dbConn, err
 }
 
@@ -150,35 +152,20 @@ func (c *Connector) Dispose() {
 }
 
 func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, dbConnection, error) {
-	if !c.enableMultipleConnections && !c.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 {
-		return "", dbConnection{}, MissingMultipleConnectionsConfig
-	}
-	// The database connection may vary depending on query arguments
-	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := defaultKey(c.UID)
-	dbConn, ok := c.getDBConnection(key)
-	if !ok {
-		return "", dbConnection{}, MissingDBConnection
-	}
-	if !c.enableMultipleConnections || len(q.ConnectionArgs) == 0 {
-		backend.Logger.Debug("using single user connection")
-		return key, dbConn, nil
-	}
-	
-	key = keyWithConnectionArgs(c.UID, q.ConnectionArgs)
+	key := datasourceCacheKey(c.UID, q.ConnectionArgs)
 	if cachedConn, ok := c.getDBConnection(key); ok {
 		backend.Logger.Debug("cached connection")
 		return key, cachedConn, nil
 	}
 
-	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
+	db, err := c.driver.Connect(ctx, c.instanceSettings, q.ConnectionArgs)
 	if err != nil {
 		backend.Logger.Debug("connect error " + err.Error())
 		return "", dbConnection{}, backend.DownstreamError(err)
 	}
+
 	backend.Logger.Debug("new connection(multiple) created")
-	// Assign this connection in the cache
-	dbConn = dbConnection{db, dbConn.settings}
+	dbConn := dbConnection{db, c.instanceSettings}
 	c.storeDBConnection(key, dbConn)
 
 	return key, dbConn, nil
