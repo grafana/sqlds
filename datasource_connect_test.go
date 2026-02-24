@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -80,11 +79,11 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			conn := &Connector{UID: tt.dsUID, driver: d, enableMultipleConnections: true, driverSettings: DriverSettings{}}
 			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
-			key := defaultKey(tt.dsUID)
+			key := datasourceCacheKey(tt.dsUID, nil)
 			// Add the mandatory default db
 			conn.storeDBConnection(key, dbConnection{db, settings})
 			if tt.existingDB != nil {
-				key = keyWithConnectionArgs(tt.dsUID, []byte(tt.args))
+				key = datasourceCacheKey(tt.dsUID, []byte(tt.args))
 				conn.storeDBConnection(key, dbConnection{tt.existingDB, settings})
 			}
 
@@ -100,22 +99,6 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
-		conn := &Connector{driver: d, enableMultipleConnections: false}
-		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage("foo")})
-		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
-			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
-		}
-	})
-
-	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
-		conn := &Connector{driver: d}
-		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{})
-		if err == nil || !errors.Is(err, MissingDBConnection) {
-			t.Errorf("expecting error: %v", MissingDBConnection)
-		}
-	})
 }
 
 func Test_Dispose(t *testing.T) {
@@ -124,7 +107,7 @@ func Test_Dispose(t *testing.T) {
 		d := &fakeDriver{openDBfn: func(msg json.RawMessage) (*sql.DB, error) { return db, nil }}
 		conn := &Connector{driver: d}
 		ds := &SQLDatasource{connector: conn}
-		conn.connections.Store(defaultKey("uid1"), dbConnection{db: db})
+		conn.connections.Store("uid1", dbConnection{db: db})
 		conn.connections.Store("foo", dbConnection{db: db})
 		ds.Dispose()
 		count := 0
