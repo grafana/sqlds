@@ -66,6 +66,8 @@ type SQLDatasource struct {
 	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 	// PostCheckHealth (optional).Performs custom health check after the Connect method
 	PostCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
+	// ResourceMiddleware (optional). Allows interception to CallResource before it is passed to sqlds
+	ResourceMiddleware func(next backend.CallResourceHandler) backend.CallResourceHandler
 }
 
 // NewDatasource creates a new `SQLDatasource`.
@@ -84,6 +86,10 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	}
 
 	ds.CallResourceHandler = httpadapter.New(mux)
+	if ds.ResourceMiddleware != nil {
+		ds.CallResourceHandler = ds.ResourceMiddleware(ds.CallResourceHandler)
+	}
+
 	ds.metrics = NewMetrics(settings.Name, settings.Type, EndpointQuery)
 
 	ds.rowLimit = ds.newRowLimit(ctx, conn)
