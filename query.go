@@ -53,13 +53,14 @@ func GetQuery(query backend.DataQuery, headers http.Header, setHeaders bool) (*Q
 }
 
 type DBQuery struct {
-	DB         Connection
-	fillMode   *data.FillMissing
-	Settings   backend.DataSourceInstanceSettings
-	metrics    Metrics
-	DSName     string
-	converters []sqlutil.Converter
-	rowLimit   int64
+	DB              Connection
+	fillMode        *data.FillMissing
+	Settings        backend.DataSourceInstanceSettings
+	metrics         Metrics
+	DSName          string
+	converters      []sqlutil.Converter
+	rowLimit        int64
+	rowCapacityHint int64
 }
 
 func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing, rowLimit int64) *DBQuery {
@@ -71,6 +72,15 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 		metrics:    NewMetrics(settings.Name, settings.Type, EndpointQuery),
 		rowLimit:   rowLimit,
 	}
+}
+
+// WithRowCapacityHint sets an expected row count used to presize Frame fields
+// before scanning. A value of 0 (the default) preserves the historical
+// behavior of growing Fields as rows arrive. Returns the receiver to allow
+// chaining after NewQuery.
+func (q *DBQuery) WithRowCapacityHint(hint int64) *DBQuery {
+	q.rowCapacityHint = hint
+	return q
 }
 
 // Run sends the query to the connection and converts the rows to a dataframe.
@@ -139,7 +149,7 @@ func (q *DBQuery) convertRowsToFrames(rows *sql.Rows, query *Query, queryErrorMu
 		q.metrics.CollectDuration(source, status, time.Since(start).Seconds())
 	}()
 
-	res, err := getFrames(rows, q.rowLimit, q.converters, q.fillMode, query)
+	res, err := getFrames(rows, q.rowLimit, q.rowCapacityHint, q.converters, q.fillMode, query)
 	if err != nil {
 		status = StatusError
 
@@ -159,15 +169,26 @@ func (q *DBQuery) convertRowsToFrames(rows *sql.Rows, query *Query, queryErrorMu
 	return res, nil
 }
 
-// getFrames converts rows to dataframes
-func getFrames(rows *sql.Rows, limit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+// getFrames converts rows to dataframes.
+// If capacity > 0, the Frame's Fields are presized via
+// sqlutil.FrameFromRowsWithCapacity to avoid per-column slice growth during
+// scanning. Passing 0 preserves the historical FrameFromRows behavior.
+func getFrames(rows *sql.Rows, limit int64, capacity int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Validate rows before processing to prevent panics
 	if err := validateRows(rows); err != nil {
 		backend.Logger.Error("Invalid SQL rows", "error", err.Error())
 		return nil, err
 	}
 
-	frame, err := sqlutil.FrameFromRows(rows, limit, converters...)
+	var (
+		frame *data.Frame
+		err   error
+	)
+	if capacity > 0 {
+		frame, err = sqlutil.FrameFromRowsWithCapacity(rows, limit, capacity, converters...)
+	} else {
+		frame, err = sqlutil.FrameFromRows(rows, limit, converters...)
+	}
 	if err != nil {
 		return nil, err
 	}

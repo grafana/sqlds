@@ -62,6 +62,10 @@ type SQLDatasource struct {
 	// https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#row_limit
 	EnableRowLimit bool
 	rowLimit       int64
+	// rowCapacityHint mirrors DriverSettings.RowCapacityHint, resolved once
+	// at init and passed into every DBQuery so FrameFromRows can presize
+	// its Fields. Zero disables presizing.
+	rowCapacityHint int64
 	// PreCheckHealth (optional). Performs custom health check before the Connect method
 	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 	// PostCheckHealth (optional).Performs custom health check after the Connect method
@@ -93,6 +97,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 	ds.metrics = NewMetrics(settings.Name, settings.Type, EndpointQuery)
 
 	ds.rowLimit = ds.newRowLimit(ctx, conn)
+	ds.rowCapacityHint = conn.driverSettings.RowCapacityHint
 
 	return ds, nil
 }
@@ -242,7 +247,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
+	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit).
+		WithRowCapacityHint(ds.rowCapacityHint)
 	res, err := dbQuery.Run(ctx, q, queryErrorMutator, args...)
 	if err == nil {
 		return res, nil
@@ -268,7 +274,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 					time.Sleep(time.Duration(ds.DriverSettings().Pause * int(time.Second)))
 				}
 
-				dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
+				dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit).
+					WithRowCapacityHint(ds.rowCapacityHint)
 				res, err = dbQuery.Run(ctx, q, queryErrorMutator, args...)
 				if err == nil {
 					return res, err
@@ -298,7 +305,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				continue
 			}
 
-			dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
+			dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit).
+				WithRowCapacityHint(ds.rowCapacityHint)
 			res, err = dbQuery.Run(ctx, q, queryErrorMutator, args...)
 			if err == nil {
 				return res, err
