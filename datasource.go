@@ -62,6 +62,18 @@ type SQLDatasource struct {
 	// https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#row_limit
 	EnableRowLimit bool
 	rowLimit       int64
+	// cachedConverters is ds.driver().Converters() captured once in
+	// NewDatasource. Drivers like snowflake/bigquery/clickhouse allocate a
+	// fresh slice on each Converters() call — hot-path reads here avoid that.
+	cachedConverters []sqlutil.Converter
+	// Cached optional-mutator interface assertions against the driver.
+	// These are resolved once in NewDatasource instead of on every query.
+	queryDataMutator   QueryDataMutator
+	queryMutator       QueryMutator
+	responseMutator    ResponseMutator
+	queryArgSetter     QueryArgSetter
+	queryErrorMutator  QueryErrorMutator
+	checkHealthMutator CheckHealthMutator
 	// PreCheckHealth (optional). Performs custom health check before the Connect method
 	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 	// PostCheckHealth (optional).Performs custom health check after the Connect method
@@ -99,9 +111,17 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 
 // NewDatasource initializes the Datasource wrapper and instance manager
 func NewDatasource(c Driver) *SQLDatasource {
-	return &SQLDatasource{
-		connector: &Connector{driver: c},
+	ds := &SQLDatasource{
+		connector:        &Connector{driver: c},
+		cachedConverters: c.Converters(),
 	}
+	ds.queryDataMutator, _ = c.(QueryDataMutator)
+	ds.queryMutator, _ = c.(QueryMutator)
+	ds.responseMutator, _ = c.(ResponseMutator)
+	ds.queryArgSetter, _ = c.(QueryArgSetter)
+	ds.queryErrorMutator, _ = c.(QueryErrorMutator)
+	ds.checkHealthMutator, _ = c.(CheckHealthMutator)
+	return ds
 }
 
 // Dispose cleans up datasource instance resources.
@@ -121,8 +141,8 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 
 	wg.Add(len(req.Queries))
 
-	if queryDataMutator, ok := ds.driver().(QueryDataMutator); ok {
-		ctx, req = queryDataMutator.MutateQueryData(ctx, req)
+	if ds.queryDataMutator != nil {
+		ctx, req = ds.queryDataMutator.MutateQueryData(ctx, req)
 	}
 
 	// Execute each query and store the results by query RefID
@@ -156,12 +176,10 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 			}()
 
 			frames, err := ds.handleQuery(ctx, query, headers)
-			if err == nil {
-				if responseMutator, ok := ds.driver().(ResponseMutator); ok {
-					frames, err = responseMutator.MutateResponse(ctx, frames)
-					if err != nil {
-						err = backend.PluginError(err)
-					}
+			if err == nil && ds.responseMutator != nil {
+				frames, err = ds.responseMutator.MutateResponse(ctx, frames)
+				if err != nil {
+					err = backend.PluginError(err)
 				}
 			}
 
@@ -190,12 +208,14 @@ func (ds *SQLDatasource) GetDBFromQuery(ctx context.Context, q *Query) (*sql.DB,
 
 // handleQuery will call query, and attempt to reconnect if the query failed
 func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery, headers http.Header) (data.Frames, error) {
-	if queryMutator, ok := ds.driver().(QueryMutator); ok {
-		ctx, req = queryMutator.MutateQuery(ctx, req)
+	settings := ds.DriverSettings()
+
+	if ds.queryMutator != nil {
+		ctx, req = ds.queryMutator.MutateQuery(ctx, req)
 	}
 
 	// Convert the backend.DataQuery into a Query object
-	q, err := GetQuery(req, headers, ds.DriverSettings().ForwardHeaders)
+	q, err := GetQuery(req, headers, settings.ForwardHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +230,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Apply the default FillMode, overwritting it if the query specifies it
-	fillMode := ds.DriverSettings().FillMode
+	fillMode := settings.FillMode
 	if q.FillMissing != nil {
 		fillMode = q.FillMissing
 	}
@@ -221,28 +241,25 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return sqlutil.ErrorFrameFromQuery(q), err
 	}
 
-	if ds.DriverSettings().Timeout != 0 {
-		tctx, cancel := context.WithTimeout(ctx, ds.DriverSettings().Timeout)
+	if settings.Timeout != 0 {
+		tctx, cancel := context.WithTimeout(ctx, settings.Timeout)
 		defer cancel()
 
 		ctx = tctx
 	}
 
 	var args []interface{}
-	if argSetter, ok := ds.driver().(QueryArgSetter); ok {
-		args = argSetter.SetQueryArgs(ctx, headers)
+	if ds.queryArgSetter != nil {
+		args = ds.queryArgSetter.SetQueryArgs(ctx, headers)
 	}
 
-	var queryErrorMutator QueryErrorMutator
-	if mutator, ok := ds.driver().(QueryErrorMutator); ok {
-		queryErrorMutator = mutator
-	}
+	queryErrorMutator := ds.queryErrorMutator
 
 	// FIXES:
 	//  * Some datasources (snowflake) expire connections or have an authentication token that expires if not used in 1 or 4 hours.
 	//    Because the datasource driver does not include an option for permanent connections, we retry the connection
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
-	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
+	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit)
 	res, err := dbQuery.Run(ctx, q, queryErrorMutator, args...)
 	if err == nil {
 		return res, nil
@@ -256,24 +273,24 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	// context deadline retry the query
 	if errors.Is(err, ErrorQuery) && !errors.Is(err, context.DeadlineExceeded) {
 		// only retry on messages that contain specific errors
-		if shouldRetry(ds.DriverSettings().RetryOn, err.Error()) {
-			for i := 0; i < ds.DriverSettings().Retries; i++ {
+		if shouldRetry(settings.RetryOn, err.Error()) {
+			for i := 0; i < settings.Retries; i++ {
 				backend.Logger.Warn(fmt.Sprintf("query failed: %s. Retrying %d times", err.Error(), i))
 				db, err := ds.connector.Reconnect(ctx, dbConn, q, cacheKey)
 				if err != nil {
 					return nil, backend.DownstreamError(err)
 				}
 
-				if ds.DriverSettings().Pause > 0 {
-					time.Sleep(time.Duration(ds.DriverSettings().Pause * int(time.Second)))
+				if settings.Pause > 0 {
+					time.Sleep(time.Duration(settings.Pause * int(time.Second)))
 				}
 
-				dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
+				dbQuery := NewQuery(db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit)
 				res, err = dbQuery.Run(ctx, q, queryErrorMutator, args...)
 				if err == nil {
 					return res, err
 				}
-				if !shouldRetry(ds.DriverSettings().RetryOn, err.Error()) {
+				if !shouldRetry(settings.RetryOn, err.Error()) {
 					return res, err
 				}
 				backend.Logger.Warn(fmt.Sprintf("Retry failed: %s", err.Error()))
@@ -282,7 +299,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	}
 
 	// Check if the error is retryable and convert to downstream error if so
-	if errors.Is(err, ErrorQuery) && shouldRetry(ds.DriverSettings().RetryOn, err.Error()) {
+	if errors.Is(err, ErrorQuery) && shouldRetry(settings.RetryOn, err.Error()) {
 		// Convert retryable errors to downstream errors
 		if !backend.IsDownstreamError(err) {
 			err = backend.DownstreamError(err)
@@ -291,14 +308,14 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 	// allow retries on timeouts
 	if errors.Is(err, context.DeadlineExceeded) {
-		for i := 0; i < ds.DriverSettings().Retries; i++ {
+		for i := 0; i < settings.Retries; i++ {
 			backend.Logger.Warn(fmt.Sprintf("connection timed out. retrying %d times", i))
 			db, err := ds.connector.Reconnect(ctx, dbConn, q, cacheKey)
 			if err != nil {
 				continue
 			}
 
-			dbQuery := NewQuery(db, dbConn.settings, ds.driver().Converters(), fillMode, ds.rowLimit)
+			dbQuery := NewQuery(db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit)
 			res, err = dbQuery.Run(ctx, q, queryErrorMutator, args...)
 			if err == nil {
 				return res, err
@@ -311,8 +328,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 // CheckHealth pings the connected SQL database
 func (ds *SQLDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	if checkHealthMutator, ok := ds.driver().(CheckHealthMutator); ok {
-		ctx, req = checkHealthMutator.MutateCheckHealth(ctx, req)
+	if ds.checkHealthMutator != nil {
+		ctx, req = ds.checkHealthMutator.MutateCheckHealth(ctx, req)
 	}
 	healthChecker := &HealthChecker{
 		Connector:       ds.connector,
