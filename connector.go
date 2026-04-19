@@ -17,6 +17,10 @@ type Connector struct {
 	connections    sync.Map
 	driver         Driver
 	driverSettings DriverSettings
+	// defaultKey is the cache key for the single-connection path. It is
+	// fmt.Sprintf("%s-default", UID) and never changes for the life of the
+	// connector, so we compute it once in NewConnector.
+	defaultKey string
 	// Enabling multiple connections may cause that concurrent connection limits
 	// are hit. The datasource enabling this should make sure connections are cached
 	// if necessary.
@@ -34,15 +38,15 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 		UID:                       settings.UID,
 		driver:                    driver,
 		driverSettings:            ds,
+		defaultKey:                defaultKey(settings.UID),
 		enableMultipleConnections: enableMultipleConnections,
 	}
-	key := defaultKey(settings.UID)
-	conn.storeDBConnection(key, dbConnection{db, settings})
+	conn.storeDBConnection(conn.defaultKey, dbConnection{db, settings})
 	return conn, nil
 }
 
 func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnection, error) {
-	key := defaultKey(c.UID)
+	key := c.defaultKey
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
 		return nil, ErrorMissingDBConnection
@@ -155,7 +159,7 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
-	key := defaultKey(c.UID)
+	key := c.defaultKey
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
 		return "", dbConnection{}, MissingDBConnection
