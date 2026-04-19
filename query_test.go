@@ -240,6 +240,30 @@ func TestNewQuery(t *testing.T) {
 	require.Equal(t, fillMode, dbQuery.fillMode)
 	require.Equal(t, rowLimit, dbQuery.rowLimit)
 	require.NotNil(t, dbQuery.metrics)
+	require.Equal(t, int64(0), dbQuery.rowCapacityHint, "rowCapacityHint defaults to 0 (no presize)")
+}
+
+func TestDBQuery_WithRowCapacityHint(t *testing.T) {
+	conn := &testConnection{}
+	settings := backend.DataSourceInstanceSettings{Name: "test"}
+
+	t.Run("setter stores the hint", func(t *testing.T) {
+		q := NewQuery(conn, settings, nil, nil, defaultRowLimit).
+			WithRowCapacityHint(5000)
+		require.Equal(t, int64(5000), q.rowCapacityHint)
+	})
+
+	t.Run("setter is chainable and returns receiver", func(t *testing.T) {
+		q := NewQuery(conn, settings, nil, nil, defaultRowLimit)
+		require.Same(t, q, q.WithRowCapacityHint(100))
+	})
+
+	t.Run("zero hint is the documented no-presize sentinel", func(t *testing.T) {
+		q := NewQuery(conn, settings, nil, nil, defaultRowLimit).
+			WithRowCapacityHint(1000).
+			WithRowCapacityHint(0)
+		require.Equal(t, int64(0), q.rowCapacityHint)
+	})
 }
 
 func TestRun_WithDownStreamErrorMutator(t *testing.T) {
