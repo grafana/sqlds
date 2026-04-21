@@ -156,7 +156,30 @@ func (q *DBQuery) convertRowsToFrames(rows *sql.Rows, query *Query, queryErrorMu
 			backend.ErrorSource(source),
 		)
 	}
+
+	q.observeResponseSize(res)
+
 	return res, nil
+}
+
+// observeResponseSize records rows + cells (rows × fields) across all returned frames.
+// Skips emission entirely if any frame has inconsistent field lengths, since partial
+// totals would mislead operators investigating large responses.
+func (q *DBQuery) observeResponseSize(frames data.Frames) {
+	var totalRows, totalCells int64
+	for _, frame := range frames {
+		if frame == nil {
+			continue
+		}
+		rowLen, err := frame.RowLen()
+		if err != nil {
+			backend.Logger.Debug("skipping response size observation", "error", err.Error())
+			return
+		}
+		totalRows += int64(rowLen)
+		totalCells += int64(rowLen) * int64(len(frame.Fields))
+	}
+	q.metrics.CollectResponseSize(totalRows, totalCells)
 }
 
 // getFrames converts rows to dataframes
