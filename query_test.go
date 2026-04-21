@@ -11,6 +11,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -349,6 +351,64 @@ func TestRun_ErrorQueryWrapping(t *testing.T) {
 		require.True(t, errors.Is(receivedErr, ErrorQuery), "Mutator should receive ErrorQuery-wrapped error")
 		require.True(t, errors.Is(receivedErr, errorQueryCompleted), "Original error should be in chain")
 	})
+}
+
+func TestCollectResponseSize(t *testing.T) {
+	// Use a unique datasource_type label so this test does not race with
+	// observations from other tests against the same global histogram vec.
+	const dsType = "TestCollectResponseSize-type"
+
+	m := NewMetrics("test-ds", dsType, EndpointQuery)
+	m.CollectResponseSize(42, 168)
+
+	rows := histogramSnapshot(t, responseRowsMetric, dsType)
+	require.Equal(t, uint64(1), rows.GetSampleCount(), "rows histogram should record one observation")
+	require.Equal(t, 42.0, rows.GetSampleSum(), "rows histogram sum should equal observed value")
+
+	cells := histogramSnapshot(t, responseCellsMetric, dsType)
+	require.Equal(t, uint64(1), cells.GetSampleCount(), "cells histogram should record one observation")
+	require.Equal(t, 168.0, cells.GetSampleSum(), "cells histogram sum should equal observed value")
+}
+
+func TestObserveResponseSize_MultipleFrames(t *testing.T) {
+	const dsType = "TestObserveResponseSize-type"
+
+	frames := data.Frames{
+		data.NewFrame("a",
+			data.NewField("t", nil, []time.Time{time.UnixMilli(1), time.UnixMilli(2)}),
+			data.NewField("v", nil, []float64{1, 2}),
+		),
+		data.NewFrame("b",
+			data.NewField("t", nil, []time.Time{time.UnixMilli(3)}),
+			data.NewField("v", nil, []float64{3}),
+			data.NewField("w", nil, []float64{4}),
+		),
+	}
+
+	q := &DBQuery{metrics: NewMetrics("test-ds", dsType, EndpointQuery)}
+	q.observeResponseSize(frames)
+
+	rows := histogramSnapshot(t, responseRowsMetric, dsType)
+	require.Equal(t, uint64(1), rows.GetSampleCount())
+	require.Equal(t, 3.0, rows.GetSampleSum(), "should sum rows across frames (2 + 1)")
+
+	cells := histogramSnapshot(t, responseCellsMetric, dsType)
+	require.Equal(t, uint64(1), cells.GetSampleCount())
+	require.Equal(t, 7.0, cells.GetSampleSum(), "should sum cells: 2*2 + 1*3 = 7")
+}
+
+// histogramSnapshot extracts the dto.Histogram for a given label value, so tests
+// can assert on sample count and sum directly.
+func histogramSnapshot(t *testing.T, vec *prometheus.HistogramVec, dsType string) *dto.Histogram {
+	t.Helper()
+	obs, err := vec.GetMetricWithLabelValues(dsType)
+	require.NoError(t, err)
+	hist, ok := obs.(prometheus.Histogram)
+	require.True(t, ok, "expected prometheus.Histogram")
+	out := &dto.Metric{}
+	require.NoError(t, hist.Write(out))
+	require.NotNil(t, out.Histogram)
+	return out.Histogram
 }
 
 // mockErrorMutator is a simple implementation for testing
