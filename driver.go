@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+
+	"github.com/grafana/sqlds/v5/responseobs"
 )
 
 type DriverSettings struct {
@@ -21,6 +23,12 @@ type DriverSettings struct {
 	ForwardHeaders bool
 	Errors         bool
 	RowLimit       int64
+	// ResponseThresholds configures when a query response is considered
+	// "large" enough to emit a structured warn log. A zero value on
+	// either field disables that dimension. At the sqlds layer bytes
+	// cannot be measured cheaply, so only the Rows threshold takes
+	// effect for sqlds-emitted observations.
+	ResponseThresholds responseobs.Thresholds
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
