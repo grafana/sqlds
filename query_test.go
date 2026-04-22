@@ -5,16 +5,20 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/sqlds/v5/responseobs"
 )
 
 var (
@@ -386,7 +390,7 @@ func TestObserveResponseSize_MultipleFrames(t *testing.T) {
 	}
 
 	q := &DBQuery{metrics: NewMetrics("test-ds", dsType, EndpointQuery)}
-	q.observeResponseSize(frames)
+	q.observeResponseSize(context.Background(), frames, "A", time.Now())
 
 	rows := histogramSnapshot(t, responseRowsMetric, dsType)
 	require.Equal(t, uint64(1), rows.GetSampleCount())
@@ -395,6 +399,86 @@ func TestObserveResponseSize_MultipleFrames(t *testing.T) {
 	cells := histogramSnapshot(t, responseCellsMetric, dsType)
 	require.Equal(t, uint64(1), cells.GetSampleCount())
 	require.Equal(t, 7.0, cells.GetSampleSum(), "should sum cells: 2*2 + 1*3 = 7")
+}
+
+func TestObserveResponseSize_ThresholdCrossed_EmitsLog(t *testing.T) {
+	rec := swapBackendLogger(t)
+
+	frame := data.NewFrame("big",
+		data.NewField("v", nil, []int64{1, 2, 3, 4, 5}),
+	)
+	q := &DBQuery{
+		Settings:   backend.DataSourceInstanceSettings{Type: "mssql", UID: "uid1", Name: "ds1"},
+		metrics:    NewMetrics("ds1", "TestObserveResponseSize-cross", EndpointQuery),
+		thresholds: responseobs.Thresholds{Rows: 3},
+	}
+	q.observeResponseSize(context.Background(), data.Frames{frame}, "A", time.Now())
+
+	require.Len(t, rec.entries, 1, "expected one large-response log")
+	assert.Equal(t, "large datasource response", rec.entries[0].msg)
+}
+
+func TestObserveResponseSize_ThresholdNotCrossed_NoLog(t *testing.T) {
+	rec := swapBackendLogger(t)
+
+	frame := data.NewFrame("small",
+		data.NewField("v", nil, []int64{1, 2}),
+	)
+	q := &DBQuery{
+		Settings:   backend.DataSourceInstanceSettings{Type: "mssql", UID: "uid1", Name: "ds1"},
+		metrics:    NewMetrics("ds1", "TestObserveResponseSize-nocross", EndpointQuery),
+		thresholds: responseobs.Thresholds{Rows: 100},
+	}
+	q.observeResponseSize(context.Background(), data.Frames{frame}, "A", time.Now())
+
+	assert.Empty(t, rec.entries, "no log expected below threshold")
+}
+
+// recordedLogEntry + recordingBackendLogger capture warn/error/etc calls on
+// backend.Logger so tests can assert side effects without relying on the
+// default hclog output. Not parallel-safe because backend.Logger is global.
+type recordedLogEntry struct {
+	level log.Level
+	msg   string
+	args  []interface{}
+}
+
+type recordingBackendLogger struct {
+	mu      sync.Mutex
+	entries []recordedLogEntry
+}
+
+func (l *recordingBackendLogger) record(level log.Level, msg string, args []interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = append(l.entries, recordedLogEntry{level: level, msg: msg, args: args})
+}
+
+func (l *recordingBackendLogger) Debug(msg string, args ...interface{}) {
+	l.record(log.Debug, msg, args)
+}
+func (l *recordingBackendLogger) Info(msg string, args ...interface{}) {
+	l.record(log.Info, msg, args)
+}
+func (l *recordingBackendLogger) Warn(msg string, args ...interface{}) {
+	l.record(log.Warn, msg, args)
+}
+func (l *recordingBackendLogger) Error(msg string, args ...interface{}) {
+	l.record(log.Error, msg, args)
+}
+func (l *recordingBackendLogger) With(_ ...interface{}) log.Logger          { return l }
+func (l *recordingBackendLogger) Level() log.Level                          { return log.Debug }
+func (l *recordingBackendLogger) FromContext(_ context.Context) log.Logger  { return l }
+
+// swapBackendLogger replaces backend.Logger with a recording logger for the
+// lifetime of the test and restores it on cleanup.
+func swapBackendLogger(t *testing.T) *recordingBackendLogger {
+	t.Helper()
+	rec := &recordingBackendLogger{}
+	orig := backend.Logger
+	backend.Logger = rec
+	t.Cleanup(func() { backend.Logger = orig })
+	return rec
 }
 
 // histogramSnapshot extracts the dto.Histogram for a given label value, so tests

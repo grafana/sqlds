@@ -15,6 +15,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
+
+	"github.com/grafana/sqlds/v5/responseobs"
 )
 
 // FormatQueryOption defines how the user has chosen to represent the data
@@ -60,17 +62,28 @@ type DBQuery struct {
 	DSName     string
 	converters []sqlutil.Converter
 	rowLimit   int64
+	thresholds responseobs.Thresholds
 }
 
 func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing, rowLimit int64) *DBQuery {
 	return &DBQuery{
 		DB:         db,
 		DSName:     settings.Name,
+		Settings:   settings,
 		converters: converters,
 		fillMode:   fillMode,
 		metrics:    NewMetrics(settings.Name, settings.Type, EndpointQuery),
 		rowLimit:   rowLimit,
 	}
+}
+
+// WithResponseThresholds configures when a query response is considered
+// "large" enough to emit a structured warn log. Zero fields on the
+// Thresholds value disable that dimension. Returns the receiver to allow
+// chaining after NewQuery.
+func (q *DBQuery) WithResponseThresholds(t responseobs.Thresholds) *DBQuery {
+	q.thresholds = t
+	return q
 }
 
 // Run sends the query to the connection and converts the rows to a dataframe.
@@ -128,10 +141,10 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator Query
 		}
 	}()
 
-	return q.convertRowsToFrames(rows, query, queryErrorMutator)
+	return q.convertRowsToFrames(ctx, rows, query, queryErrorMutator, start)
 }
 
-func (q *DBQuery) convertRowsToFrames(rows *sql.Rows, query *Query, queryErrorMutator QueryErrorMutator) (data.Frames, error) {
+func (q *DBQuery) convertRowsToFrames(ctx context.Context, rows *sql.Rows, query *Query, queryErrorMutator QueryErrorMutator, runStart time.Time) (data.Frames, error) {
 	source := SourcePlugin
 	status := StatusOK
 	start := time.Now()
@@ -157,15 +170,17 @@ func (q *DBQuery) convertRowsToFrames(rows *sql.Rows, query *Query, queryErrorMu
 		)
 	}
 
-	q.observeResponseSize(res)
+	q.observeResponseSize(ctx, res, query.RefID, runStart)
 
 	return res, nil
 }
 
-// observeResponseSize records rows + cells (rows × fields) across all returned frames.
-// Skips emission entirely if any frame has inconsistent field lengths, since partial
-// totals would mislead operators investigating large responses.
-func (q *DBQuery) observeResponseSize(frames data.Frames) {
+// observeResponseSize records rows + cells (rows × fields) across all returned frames
+// and, if thresholds are configured, hands the observation to responseobs for
+// structured large-response logging. Skips emission entirely if any frame has
+// inconsistent field lengths, since partial totals would mislead operators
+// investigating large responses.
+func (q *DBQuery) observeResponseSize(ctx context.Context, frames data.Frames, refID string, runStart time.Time) {
 	var totalRows, totalCells int64
 	for _, frame := range frames {
 		if frame == nil {
@@ -180,6 +195,14 @@ func (q *DBQuery) observeResponseSize(frames data.Frames) {
 		totalCells += int64(rowLen) * int64(len(frame.Fields))
 	}
 	q.metrics.CollectResponseSize(totalRows, totalCells)
+
+	responseobs.Observe(ctx, responseobs.Observation{
+		Datasource: q.Settings,
+		Rows:       totalRows,
+		Cells:      totalCells,
+		Duration:   time.Since(runStart),
+		RefID:      refID,
+	}, q.thresholds)
 }
 
 // getFrames converts rows to dataframes
