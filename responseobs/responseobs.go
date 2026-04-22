@@ -56,15 +56,17 @@ type Observation struct {
 }
 
 // Observe compares obs against t. If a threshold is crossed, it emits a
-// single structured warn log via backend.Logger and returns true.
-// Otherwise it returns false and emits nothing. Intended to be called
-// at most once per response.
+// single structured warn log via backend.Logger, increments the
+// plugins_sql_large_responses_total counter, and returns true. Otherwise
+// it returns false and emits nothing. Intended to be called at most once
+// per response.
 func Observe(ctx context.Context, obs Observation, t Thresholds) bool {
 	if !crosses(obs, t) {
 		return false
 	}
+	appURL := appURLFromContext(ctx)
 	backend.Logger.Warn("large datasource response",
-		"app_url", appURLFromContext(ctx),
+		"app_url", appURL,
 		"datasource_type", obs.Datasource.Type,
 		"datasource_uid", obs.Datasource.UID,
 		"datasource_name", obs.Datasource.Name,
@@ -75,6 +77,7 @@ func Observe(ctx context.Context, obs Observation, t Thresholds) bool {
 		"ref_id", obs.RefID,
 		"query_hash", obs.QueryHash,
 	)
+	largeResponsesCounter.WithLabelValues(obs.Datasource.Type, appURL, obs.Datasource.UID).Inc()
 	return true
 }
 
