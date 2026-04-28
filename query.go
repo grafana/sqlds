@@ -332,7 +332,7 @@ func injectJSONKey(in []byte, key string, value []byte) ([]byte, bool) {
 	}
 
 	body := bytes.TrimSpace(trimmed[1 : len(trimmed)-1])
-	buf := make([]byte, 0, len(trimmed)+len(keyToken)+len(value)+3)
+	buf := make([]byte, 0, len(body)+len(keyToken)+len(value)+4)
 	buf = append(buf, '{')
 	if len(body) > 0 {
 		buf = append(buf, body...)
