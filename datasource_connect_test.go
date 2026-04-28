@@ -78,7 +78,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			conn := &Connector{UID: tt.dsUID, driver: d, enableMultipleConnections: true, driverSettings: DriverSettings{}}
+			conn := &Connector{UID: tt.dsUID, defaultKey: defaultKey(tt.dsUID), driver: d, enableMultipleConnections: true, driverSettings: DriverSettings{}}
 			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
 			key := defaultKey(tt.dsUID)
 			// Add the mandatory default db

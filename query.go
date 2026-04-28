@@ -1,6 +1,7 @@
 package sqlds
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -293,13 +294,14 @@ func fixFrameForLongToMulti(frame *data.Frame) error {
 	// the timeseries package expects the first time field in the frame to be non-nullable and ignores the rest
 	timeField := frame.Fields[timeFields[0]]
 	if timeField.Type() == data.FieldTypeNullableTime {
-		newValues := []time.Time{}
-		for i := 0; i < timeField.Len(); i++ {
+		n := timeField.Len()
+		newValues := make([]time.Time, n)
+		for i := 0; i < n; i++ {
 			val, ok := timeField.ConcreteAt(i)
 			if !ok {
 				return fmt.Errorf("can not convert to wide series, input has null time values")
 			}
-			newValues = append(newValues, val.(time.Time))
+			newValues[i] = val.(time.Time)
 		}
 		newField := data.NewField(timeField.Name, timeField.Labels, newValues)
 		newField.Config = timeField.Config
@@ -316,23 +318,73 @@ func fixFrameForLongToMulti(frame *data.Frame) error {
 }
 
 func applyHeaders(query *Query, headers http.Header) *Query {
-	var args map[string]interface{}
-	if query.ConnectionArgs == nil {
-		query.ConnectionArgs = []byte("{}")
-	}
-	err := json.Unmarshal(query.ConnectionArgs, &args)
+	headerBytes, err := json.Marshal(headers)
 	if err != nil {
 		backend.Logger.Warn(fmt.Sprintf("Failed to apply headers: %s", err.Error()))
 		return query
 	}
-	args[HeaderKey] = headers
+
+	if injected, ok := injectJSONKey(query.ConnectionArgs, HeaderKey, headerBytes); ok {
+		query.ConnectionArgs = injected
+		return query
+	}
+
+	return applyHeadersSlow(query, headerBytes)
+}
+
+// injectJSONKey appends `"key":<value>` into the trailing JSON object in `in`
+// without decoding the rest of the object. It returns (newBytes, true) on
+// success. It bails to (nil, false) when `in` isn't a plain JSON object or
+// already contains `"key"` as a substring — callers should fall back to the
+// slow path in those cases to preserve overwrite semantics.
+func injectJSONKey(in []byte, key string, value []byte) ([]byte, bool) {
+	trimmed := bytes.TrimSpace(in)
+	if len(trimmed) == 0 {
+		trimmed = []byte(`{}`)
+	}
+	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
+		return nil, false
+	}
+
+	keyToken := make([]byte, 0, len(key)+2)
+	keyToken = append(keyToken, '"')
+	keyToken = append(keyToken, key...)
+	keyToken = append(keyToken, '"')
+	if bytes.Contains(trimmed, keyToken) {
+		return nil, false
+	}
+
+	body := bytes.TrimSpace(trimmed[1 : len(trimmed)-1])
+	buf := make([]byte, 0, len(body)+len(keyToken)+len(value)+4)
+	buf = append(buf, '{')
+	if len(body) > 0 {
+		buf = append(buf, body...)
+		buf = append(buf, ',')
+	}
+	buf = append(buf, keyToken...)
+	buf = append(buf, ':')
+	buf = append(buf, value...)
+	buf = append(buf, '}')
+	return buf, true
+}
+
+// applyHeadersSlow preserves the original decode/encode behaviour for edge
+// cases the fast path rejects (malformed input or an existing HeaderKey).
+func applyHeadersSlow(query *Query, headerBytes []byte) *Query {
+	var args map[string]any
+	if query.ConnectionArgs == nil {
+		query.ConnectionArgs = []byte("{}")
+	}
+	if err := json.Unmarshal(query.ConnectionArgs, &args); err != nil {
+		backend.Logger.Warn(fmt.Sprintf("Failed to apply headers: %s", err.Error()))
+		return query
+	}
+	args[HeaderKey] = json.RawMessage(headerBytes)
 	raw, err := json.Marshal(args)
 	if err != nil {
 		backend.Logger.Warn(fmt.Sprintf("Failed to apply headers: %s", err.Error()))
 		return query
 	}
-
 	query.ConnectionArgs = raw
-
 	return query
 }
