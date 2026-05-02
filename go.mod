@@ -3,7 +3,7 @@ module github.com/grafana/sqlds/v5
 go 1.25.7
 
 require (
-	github.com/go-sql-driver/mysql v1.9.3
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/go-cmp v0.7.0
 	github.com/grafana/dataplane/sdata v0.0.9
 	github.com/grafana/grafana-plugin-sdk-go v0.290.1
@@ -40,7 +40,7 @@ require (
 )
 
 require (
-	filippo.io/edwards25519 v1.1.1 // indirect
+	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
