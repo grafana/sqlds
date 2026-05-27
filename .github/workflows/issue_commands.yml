@@ -7,6 +7,8 @@ on:
 jobs:
   main:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout Actions
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -14,13 +16,11 @@ jobs:
           repository: "grafana/grafana-github-actions"
           persist-credentials: false
           path: ./actions
-          ref: main
+          ref: 3c62d35c5a66e730186a338e45aeb8fa784e2d56 # main
       - name: Install Actions
-        run: npm install --production --prefix ./actions
+        run: npm install --omit=dev --ignore-scripts --prefix ./actions
       - name: Run Commands
         uses: ./actions/commands
-        env:
-          ISSUE_COMMANDS_TOKEN: ${{secrets.ISSUE_COMMANDS_TOKEN}}
         with:
-          token: ${ISSUE_COMMANDS_TOKEN}
+          token: ${{ secrets.ISSUE_COMMANDS_TOKEN }}
           configPath: issue_commands
