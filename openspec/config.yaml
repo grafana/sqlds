@@ -1,0 +1,124 @@
+schema: spec-driven
+
+# General principles shown to AI when generating OpenSpec artifacts.
+# Specifics (paths, build / test commands, locator quirks) live in
+# .claude/CLAUDE.md when present.
+#
+# Hierarchy: MUST = enforced by CI/review. SHOULD = strong recommendation.
+# CAN = allowed without extra approval.
+context: |
+  # sqlds
+
+  Go library that sits between Grafana datasource plugins and
+  `grafana-plugin-sdk-go/data/sqlutil`. Single-module, Go-only.
+  Imported by downstream datasource plugins; every exported symbol is
+  effectively public API. Compatibility floor: keep callers on the
+  current major working — additive changes only.
+
+  ## Before coding
+  - MUST ask clarifying questions for ambiguous requirements.
+  - MUST draft an approach (API shape, internal data flow, failure
+    modes, backwards-compat surface) before writing code. Get explicit
+    approval.
+  - SHOULD list pros/cons when more than two approaches exist.
+  - SHOULD identify which exported symbols change and whether the
+    change is additive, deprecation, or breaking.
+
+  ## Code style
+  - MUST wrap errors with `%w`; use `errors.Is` / `errors.As` for control
+    flow, never string matching.
+  - MUST pass `ctx context.Context` first; honor `Done` and deadlines.
+  - SHOULD return concrete types and accept interfaces.
+  - SHOULD prefer Go stdlib and `grafana-plugin-sdk-go` primitives over
+    new dependencies — sqlds ships into Grafana's process via its
+    consumers; transitive deps are everyone's deps.
+  - MUST NOT comment WHAT the code does. Add a comment only when the WHY
+    is non-obvious (a hidden constraint, invariant, or workaround).
+
+  ## API invariants
+  - Existing exported symbols MUST NOT change signature within a major
+    version. Additive surface only.
+  - New extension points are opt-in: nil / zero values fall back to the
+    legacy code path with byte-identical behavior.
+  - `sqlutil` (in `grafana-plugin-sdk-go`) is the macro engine. sqlds
+    adds the surface around it; it does not fork or reimplement
+    macro expansion.
+  - No backend-specific knowledge (ClickHouse, MySQL, dollar-quoted
+    literals, dialect-specific escaping) leaks into sqlds. That belongs
+    in downstream plugin packages.
+
+  ## Testing
+  - MUST add Go unit tests for new code with branching logic. Run with
+    `-race` and `go vet ./...`.
+  - SHOULD include golden-output parity tests when changing the
+    interpolation or connector code paths (legacy callers see no diff).
+  - SHOULD add a runnable GoDoc example (`Example*`) for every new
+    public extension point.
+
+  ## Self-review checklist
+  1. Backwards compat — does any existing caller see a behavior diff?
+  2. Surface — is every new symbol opt-in with a sensible default?
+  3. Naming — does the symbol name read well in a downstream import?
+  4. Complexity — many branches or deep nesting? Refactor.
+  5. Dependencies — any new transitive dep imposed on consumers?
+
+# Per-artifact rules — keep proposals / designs / specs / tasks tight
+# and reviewable. Format details, not content guidance.
+rules:
+  proposal:
+    - Keep under ~500 words. Lead with "Why"; defer "How" to design.md.
+    - The proposal is self-contained general information. It MUST NOT
+      cross-reference design.md sections ("see design.md D6", "per
+      decision Dx"). Readers find the "How" in design.md on their own.
+      If a bullet feels like it needs a cross-reference to make sense,
+      the bullet is at the wrong level of detail — drop the detail, do
+      not link out to it.
+    - The `What Changes` section lists capability-level surfaces only —
+      files touched, hooks / interfaces / methods added or removed,
+      breaking-vs-non-breaking. One line per bullet.
+    - The `What Changes` section MUST NOT contain function signatures,
+      return semantics, code snippets, behavior algorithms, enumerated
+      test cases, or the rationale for any design choice. Those belong
+      in design.md (decisions, mechanisms) or tasks.md (test enumeration).
+    - Test coverage is mentioned at the layering level only — e.g.,
+      "unit tests + GoDoc examples". Specific cases live in tasks.md.
+    - The `Capabilities` section uses kebab-case names matching `specs/<name>/`.
+    - Mark breaking changes with **BREAKING**. Additive surface is the
+      default; breaking changes need explicit justification.
+  design:
+    - Required when the change adds or modifies an exported symbol on
+      `SQLDatasource`, `Driver`, `Connector`, or introduces a new
+      interface visible to consumers.
+    - Each decision states its rationale (one sentence is fine when the
+      reasoning is obvious from the decision itself). Rejected
+      alternatives SHOULD be listed when meaningful — i.e., a reasonable
+      reader might have picked them and the rejection carries
+      information. Omit the "Alternative considered" block when no
+      meaningful alternative exists; do not pad with strawmen.
+    - Risks formatted "[Risk] → Mitigation" with the proving signal
+      (test, behavior parity check, downstream consumer signal).
+  specs:
+    - While `proposal.md` or `design.md` is still being polished, MUST NOT
+      edit `specs/*/spec.md`. Specs codify settled decisions — propagate
+      them in a single follow-up pass once the upstream artifacts are
+      stable and the user signals approval. Editing specs in parallel
+      with design iteration churns scenarios against decisions still in
+      motion.
+    - Scenarios use exactly four hashtags (`#### Scenario:`). Three or
+      bullets fail validation silently.
+    - Use SHALL/MUST in requirement text. Avoid should/may in normative text.
+    - Every requirement gets at least one scenario; each scenario is
+      shaped as a test the implementation can satisfy.
+  tasks:
+    - While `proposal.md` or `design.md` is still being polished, MUST NOT
+      edit `tasks.md`. Tasks depend on settled decisions — propagate them
+      in a single follow-up pass once the upstream artifacts are stable
+      and the user signals approval. Editing tasks in parallel with
+      design iteration produces task lists that drift from the design.
+    - Group by `## N. <Group>`. Each task is `- [ ] N.M ...` so `/opsx:apply`
+      can track progress.
+    - Order by dependency. Implementation before tests; unit tests before
+      GoDoc-example tests.
+    - Every behavior-affecting change includes at least one unit-test
+      task; new public surface includes at least one runnable
+      `Example*` task.

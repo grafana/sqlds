@@ -80,6 +80,11 @@ type SQLDatasource struct {
 	PostCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 	// ResourceMiddleware (optional). Allows interception to CallResource before it is passed to sqlds
 	ResourceMiddleware func(next backend.CallResourceHandler) backend.CallResourceHandler
+
+	// Interpolator (optional). When non-nil, replaces the default interpolation
+	// pipeline. Plugins use this to install AST-aware or otherwise customised
+	// implementations. A nil value resolves to DefaultInterpolator{}.
+	Interpolator Interpolator
 }
 
 // NewDatasource creates a new `SQLDatasource`.
@@ -220,10 +225,12 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 		return nil, err
 	}
 
-	// Apply supported macros to the query
-	q.RawSQL, err = Interpolate(ds.driver(), q)
+	// Apply supported macros to the query. Uses ds.Interpolator if set,
+	// otherwise the package default — which preserves byte-for-byte parity
+	// with the legacy sqlutil.Interpolate path.
+	q.RawSQL, err = ds.interpolate(ctx, q, req.JSON)
 	if err != nil {
-		if errors.Is(err, sqlutil.ErrorBadArgumentCount) || err.Error() == ErrorParsingMacroBrackets.Error() {
+		if errors.Is(err, sqlutil.ErrorBadArgumentCount) || errors.Is(err, ErrorParsingMacroBrackets) || err.Error() == ErrorParsingMacroBrackets.Error() {
 			err = backend.DownstreamError(err)
 		}
 		return sqlutil.ErrorFrameFromQuery(q), fmt.Errorf("%s: %w", "Could not apply macros", err)

@@ -27,3 +27,18 @@ func datasourceFactory(ctx context.Context, s backend.DataSourceInstanceSettings
 ### Macros
 
 The `sqlds` package formerly defined a set of default macros, but those have been migrated to `grafana-plugin-sdk-go`: see [the code](https://github.com/grafana/grafana-plugin-sdk-go/blob/main/data/sqlutil/macros.go) for details.
+
+### Pluggable interpolator
+
+`SQLDatasource.Interpolator` accepts any implementation of the
+`Interpolator` interface:
+
+```go
+type Interpolator interface {
+    Interpolate(ctx context.Context, ds *SQLDatasource, query *sqlutil.Query, rawJSON json.RawMessage) (string, error)
+}
+```
+
+A nil `Interpolator` falls back to `DefaultInterpolator{}`, which delegates
+to `sqlutil.Interpolate` — byte-for-byte equivalent to the pre-extension
+default.
