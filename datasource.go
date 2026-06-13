@@ -51,6 +51,16 @@ type dbConnection struct {
 	settings backend.DataSourceInstanceSettings
 }
 
+// dbConnection satisfies the CachedConnection interface via these three
+// adapter methods. The struct itself and the internal field-access patterns
+// (`dbConn.db`, `dbConn.settings`) elsewhere in the package are unchanged —
+// the methods exist only to expose the existing state through the public
+// interface for use by ConnectionCache implementations.
+
+func (d dbConnection) DB() *sql.DB                                  { return d.db }
+func (d dbConnection) Settings() backend.DataSourceInstanceSettings { return d.settings }
+func (d dbConnection) Close() error                                 { return d.db.Close() }
+
 type SQLDatasource struct {
 	Completable
 	backend.CallResourceHandler
@@ -85,12 +95,24 @@ type SQLDatasource struct {
 	// pipeline. Plugins use this to install AST-aware or otherwise customised
 	// implementations. A nil value resolves to DefaultInterpolator{}.
 	Interpolator Interpolator
+
+	// ConnectionCacheFactory (optional). When non-nil, the Connector invokes
+	// this factory once during construction and uses the returned
+	// ConnectionCache for all per-ConnectionArgs *sql.DB storage. A nil
+	// factory resolves to NewSyncMapCache(), preserving the pre-extension
+	// behaviour byte-for-byte. Plugins use a factory to install a TTL or
+	// LRU cache; per-cache configuration is captured by closure.
+	ConnectionCacheFactory func() ConnectionCache
 }
 
 // NewDatasource creates a new `SQLDatasource`.
 // It uses the provided settings argument to call the ds.Driver to connect to the SQL server
 func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	conn, err := NewConnector(ctx, ds.driver(), settings, ds.EnableMultipleConnections)
+	var opts []ConnectorOption
+	if ds.ConnectionCacheFactory != nil {
+		opts = append(opts, WithCache(ds.ConnectionCacheFactory()))
+	}
+	conn, err := NewConnector(ctx, ds.driver(), settings, ds.EnableMultipleConnections, opts...)
 	if err != nil {
 		return nil, backend.DownstreamError(err)
 	}
@@ -117,7 +139,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 // NewDatasource initializes the Datasource wrapper and instance manager
 func NewDatasource(c Driver) *SQLDatasource {
 	ds := &SQLDatasource{
-		connector:        &Connector{driver: c},
+		connector:        &Connector{driver: c, cache: NewSyncMapCache()},
 		cachedConverters: c.Converters(),
 	}
 	ds.queryDataMutator, _ = c.(QueryDataMutator)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -14,7 +13,7 @@ import (
 
 type Connector struct {
 	UID            string
-	connections    sync.Map
+	cache          ConnectionCache
 	driver         Driver
 	driverSettings DriverSettings
 	// defaultKey is the cache key for the single-connection path. It is
@@ -27,7 +26,18 @@ type Connector struct {
 	enableMultipleConnections bool
 }
 
-func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool) (*Connector, error) {
+// ConnectorOption configures a Connector at construction time.
+type ConnectorOption func(*Connector)
+
+// WithCache installs a custom ConnectionCache on the Connector. When omitted,
+// NewConnector defaults to NewSyncMapCache(). The option is applied before
+// the bootstrap connection is stored, so the bootstrap entry lands in the
+// custom cache.
+func WithCache(cache ConnectionCache) ConnectorOption {
+	return func(c *Connector) { c.cache = cache }
+}
+
+func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool, opts ...ConnectorOption) (*Connector, error) {
 	ds := driver.Settings(ctx, settings)
 	db, err := driver.Connect(ctx, settings, nil)
 	if err != nil {
@@ -40,6 +50,12 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 		driverSettings:            ds,
 		defaultKey:                defaultKey(settings.UID),
 		enableMultipleConnections: enableMultipleConnections,
+	}
+	for _, opt := range opts {
+		opt(conn)
+	}
+	if conn.cache == nil {
+		conn.cache = NewSyncMapCache()
 	}
 	conn.storeDBConnection(conn.defaultKey, dbConnection{db, settings})
 	return conn, nil
@@ -133,24 +149,36 @@ func (c *Connector) Reconnect(ctx context.Context, dbConn dbConnection, q *Query
 }
 
 func (ds *Connector) getDBConnection(key string) (dbConnection, bool) {
-	conn, ok := ds.connections.Load(key)
+	// A Connector literal constructed outside this package (e.g. in test
+	// fixtures: `&sqlds.Connector{}`) can have a nil cache. Treat that as
+	// "no entry stored" rather than panicking — matches the pre-extension
+	// zero-value sync.Map behaviour.
+	if ds.cache == nil {
+		return dbConnection{}, false
+	}
+	v, ok := ds.cache.Load(key)
 	if !ok {
 		return dbConnection{}, false
 	}
-	return conn.(dbConnection), true
+	// Safe under the ConnectionCache contract: Load returns the exact value
+	// passed to Store (no wrapping, no decoration). A non-conforming
+	// implementation fails loudly here with a runtime type-assertion panic.
+	return v.(dbConnection), true
 }
 
 func (ds *Connector) storeDBConnection(key string, dbConn dbConnection) {
-	ds.connections.Store(key, dbConn)
+	if ds.cache == nil {
+		ds.cache = NewSyncMapCache()
+	}
+	ds.cache.Store(key, dbConn)
 }
 
 // Dispose is called when an existing SQLDatasource needs to be replaced
 func (c *Connector) Dispose() {
-	c.connections.Range(func(_, conn interface{}) bool {
-		_ = conn.(dbConnection).db.Close()
-		return true
-	})
-	c.connections.Clear()
+	if c.cache == nil {
+		return
+	}
+	c.cache.Dispose()
 }
 
 func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, dbConnection, error) {

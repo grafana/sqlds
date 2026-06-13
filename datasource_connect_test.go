@@ -78,7 +78,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			conn := &Connector{UID: tt.dsUID, defaultKey: defaultKey(tt.dsUID), driver: d, enableMultipleConnections: true, driverSettings: DriverSettings{}}
+			conn := &Connector{UID: tt.dsUID, defaultKey: defaultKey(tt.dsUID), driver: d, enableMultipleConnections: true, driverSettings: DriverSettings{}, cache: NewSyncMapCache()}
 			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
 			key := defaultKey(tt.dsUID)
 			// Add the mandatory default db
@@ -102,7 +102,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	}
 
 	t.Run("it should return an error if connection args are used without enabling multiple connections", func(t *testing.T) {
-		conn := &Connector{driver: d, enableMultipleConnections: false}
+		conn := &Connector{driver: d, enableMultipleConnections: false, cache: NewSyncMapCache()}
 		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage("foo")})
 		if err == nil || !errors.Is(err, MissingMultipleConnectionsConfig) {
 			t.Errorf("expecting error: %v", MissingMultipleConnectionsConfig)
@@ -110,7 +110,7 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 	})
 
 	t.Run("it should return an error if the default connection is missing", func(t *testing.T) {
-		conn := &Connector{driver: d}
+		conn := &Connector{driver: d, cache: NewSyncMapCache()}
 		_, _, err := conn.GetConnectionFromQuery(context.Background(), &Query{})
 		if err == nil || !errors.Is(err, MissingDBConnection) {
 			t.Errorf("expecting error: %v", MissingDBConnection)
@@ -122,13 +122,13 @@ func Test_Dispose(t *testing.T) {
 	t.Run("it should close connections", func(t *testing.T) {
 		db := sql.OpenDB(fakeSQLConnector{})
 		d := &fakeDriver{openDBfn: func(msg json.RawMessage) (*sql.DB, error) { return db, nil }}
-		conn := &Connector{driver: d}
+		conn := &Connector{driver: d, cache: NewSyncMapCache()}
 		ds := &SQLDatasource{connector: conn}
-		conn.connections.Store(defaultKey("uid1"), dbConnection{db: db})
-		conn.connections.Store("foo", dbConnection{db: db})
+		conn.storeDBConnection(defaultKey("uid1"), dbConnection{db: db})
+		conn.storeDBConnection("foo", dbConnection{db: db})
 		ds.Dispose()
 		count := 0
-		conn.connections.Range(func(key, value interface{}) bool {
+		conn.cache.Range(func(key string, value CachedConnection) bool {
 			count++
 			return true
 		})

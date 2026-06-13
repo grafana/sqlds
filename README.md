@@ -42,3 +42,28 @@ type Interpolator interface {
 A nil `Interpolator` falls back to `DefaultInterpolator{}`, which delegates
 to `sqlutil.Interpolate` — byte-for-byte equivalent to the pre-extension
 default.
+
+### Pluggable connection cache
+
+`SQLDatasource.ConnectionCacheFactory` accepts a factory function that
+returns any implementation of the `ConnectionCache` interface:
+
+```go
+type ConnectionCache interface {
+    Load(key string) (CachedConnection, bool)
+    Store(key string, v CachedConnection)
+    Range(f func(key string, v CachedConnection) bool)
+    Dispose()
+}
+```
+
+The factory is invoked once per `Connector` during datasource construction;
+plugins capture their own configuration (TTL, size cap, dependencies) in
+the closure. A nil factory falls back to `NewSyncMapCache()`, which is
+behaviourally equivalent to the pre-extension `sync.Map`-backed storage
+(no eviction, no background goroutines).
+
+Cache implementations MUST return from `Load` the exact `CachedConnection`
+value that was previously passed to `Store` — no wrapping or decoration.
+`sqlds`-internal code type-asserts the returned value back to its concrete
+type, and a wrapping implementation will panic at runtime.
