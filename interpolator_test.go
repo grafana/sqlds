@@ -25,7 +25,7 @@ func newDS(legacy sqlutil.Macros) *SQLDatasource {
 	}
 }
 
-// TestDefaultInterpolator_LegacyParity asserts that DefaultInterpolator
+// TestDefaultInterpolator_LegacyParity asserts that the default interpolator
 // produces byte-for-byte the same SQL as sqlutil.Interpolate for the legacy
 // macro fixture corpus — the invariant the post-extension default must hold.
 func TestDefaultInterpolator_LegacyParity(t *testing.T) {
@@ -43,9 +43,10 @@ func TestDefaultInterpolator_LegacyParity(t *testing.T) {
 		{sql: "SELECT $__upper(col), $__upper(other) FROM t", want: "SELECT UPPER(col), UPPER(other) FROM t"},
 	}
 	ds := newDS(legacy)
+	interp := defaultInterpolator(ds)
 	for _, fx := range fixtures {
 		q := &sqlutil.Query{RawSQL: fx.sql}
-		got, err := DefaultInterpolator{}.Interpolate(context.Background(), ds, q, nil)
+		got, err := interp(context.Background(), q, nil)
 		if err != nil {
 			t.Fatalf("err: %v", err)
 		}
@@ -63,27 +64,42 @@ func TestDefaultInterpolator_LegacyParity(t *testing.T) {
 	}
 }
 
-type recordingInterp struct {
-	called bool
-	out    string
-}
-
-func (r *recordingInterp) Interpolate(ctx context.Context, ds *SQLDatasource, q *sqlutil.Query, raw json.RawMessage) (string, error) {
-	r.called = true
-	return r.out, nil
+// TestNilInterpolator_FallsBackToDefault asserts that a zero-value Interpolator
+// field (e.g. an SQLDatasource built without NewDatasource) resolves to the
+// default rather than panicking on a nil func call.
+func TestNilInterpolator_FallsBackToDefault(t *testing.T) {
+	legacy := sqlutil.Macros{
+		"upper": func(q *sqlutil.Query, args []string) (string, error) {
+			return "UPPER(" + args[0] + ")", nil
+		},
+	}
+	ds := newDS(legacy) // does not set ds.Interpolator
+	if ds.Interpolator != nil {
+		t.Fatal("expected nil Interpolator on a struct-literal datasource")
+	}
+	got, err := ds.interpolate(context.Background(), &sqlutil.Query{RawSQL: "SELECT $__upper(col)"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "SELECT UPPER(col)" {
+		t.Fatalf("got %q want SELECT UPPER(col)", got)
+	}
 }
 
 // TestCustomInterpolator_ReplacesDefault asserts that assigning a custom
-// Interpolator suppresses the default code path.
+// Interpolator func suppresses the default code path.
 func TestCustomInterpolator_ReplacesDefault(t *testing.T) {
-	ri := &recordingInterp{out: "OVERRIDDEN"}
+	called := false
 	ds := newDS(nil)
-	ds.Interpolator = ri
+	ds.Interpolator = func(_ context.Context, _ *sqlutil.Query, _ json.RawMessage) (string, error) {
+		called = true
+		return "OVERRIDDEN", nil
+	}
 	got, err := ds.interpolate(context.Background(), &sqlutil.Query{RawSQL: "SELECT $__m()"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ri.called {
+	if !called {
 		t.Fatal("custom interpolator not called")
 	}
 	if got != "OVERRIDDEN" {
