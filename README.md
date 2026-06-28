@@ -70,13 +70,15 @@ type ConnectionCache interface {
 }
 ```
 
+The cache traffics in `CachedConnection`, an exported concrete value type
+that pairs the underlying `*sql.DB` with the captured
+`DataSourceInstanceSettings`. Its fields are unexported; read them through
+the `DB()`/`Settings()` accessors and release the connection with `Close()`.
+Because it is a plain value, a plugin's TTL cache can be as simple as a
+mutex-guarded `map[string]CachedConnection`.
+
 The factory is invoked once per `Connector` during datasource construction;
 plugins capture their own configuration (TTL, size cap, dependencies) in
 the closure. A nil factory falls back to `NewSyncMapCache()`, which is
 behaviourally equivalent to the pre-extension `sync.Map`-backed storage
 (no eviction, no background goroutines).
-
-Cache implementations MUST return from `Load` the exact `CachedConnection`
-value that was previously passed to `Store` — no wrapping or decoration.
-`sqlds`-internal code type-asserts the returned value back to its concrete
-type, and a wrapping implementation will panic at runtime.

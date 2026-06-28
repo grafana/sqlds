@@ -82,10 +82,10 @@ func Test_getDBConnectionFromQuery(t *testing.T) {
 			settings := backend.DataSourceInstanceSettings{UID: tt.dsUID}
 			key := defaultKey(tt.dsUID)
 			// Add the mandatory default db
-			conn.storeDBConnection(key, dbConnection{db, settings})
+			conn.storeDBConnection(key, CachedConnection{db, settings})
 			if tt.existingDB != nil {
 				key = keyWithConnectionArgs(tt.dsUID, []byte(tt.args))
-				conn.storeDBConnection(key, dbConnection{tt.existingDB, settings})
+				conn.storeDBConnection(key, CachedConnection{tt.existingDB, settings})
 			}
 
 			key, dbConn, err := conn.GetConnectionFromQuery(context.Background(), &Query{ConnectionArgs: json.RawMessage(tt.args)})
@@ -124,8 +124,8 @@ func Test_Dispose(t *testing.T) {
 		d := &fakeDriver{openDBfn: func(msg json.RawMessage) (*sql.DB, error) { return db, nil }}
 		conn := &Connector{driver: d, cache: NewSyncMapCache()}
 		ds := &SQLDatasource{connector: conn}
-		conn.storeDBConnection(defaultKey("uid1"), dbConnection{db: db})
-		conn.storeDBConnection("foo", dbConnection{db: db})
+		conn.storeDBConnection(defaultKey("uid1"), CachedConnection{db: db})
+		conn.storeDBConnection("foo", CachedConnection{db: db})
 		ds.Dispose()
 		count := 0
 		conn.cache.Range(func(key string, value CachedConnection) bool {

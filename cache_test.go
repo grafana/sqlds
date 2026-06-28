@@ -1,61 +1,59 @@
 package sqlds
 
 import (
+	"context"
 	"database/sql"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
-// stubConn is a minimal CachedConnection used by cache tests that do not
-// need a real *sql.DB. It tracks Close invocations so tests can assert
-// Dispose semantics without exercising database/sql.
-type stubConn struct {
-	id     string
-	closed atomic.Int32
-}
+// newCacheTestDB returns a real *sql.DB backed by noopConnector (declared in
+// connector_cache_test.go). It performs no network activity, so cache tests
+// can store and close it cheaply while still exercising real database/sql
+// lifecycle semantics via CachedConnection.Close.
+func newCacheTestDB() *sql.DB { return sql.OpenDB(noopConnector{}) }
 
-func (s *stubConn) DB() *sql.DB                                  { return nil }
-func (s *stubConn) Settings() backend.DataSourceInstanceSettings { return backend.DataSourceInstanceSettings{} }
-func (s *stubConn) Close() error {
-	s.closed.Add(1)
-	return nil
-}
+// dbClosed reports whether db has been closed. PingContext short-circuits to
+// "sql: database is closed" before touching the driver, so this never opens a
+// connection.
+func dbClosed(db *sql.DB) bool { return db.PingContext(context.Background()) != nil }
 
 func TestSyncMapCache_LoadStoreRoundTrip(t *testing.T) {
 	c := NewSyncMapCache()
-	v := &stubConn{id: "x"}
-	c.Store("k", v)
+	db := newCacheTestDB()
+	c.Store("k", CachedConnection{db: db, settings: backend.DataSourceInstanceSettings{UID: "x"}})
 
 	got, ok := c.Load("k")
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if got != v {
-		t.Fatalf("got %p want %p (same reference)", got, v)
+	if got.DB() != db {
+		t.Fatalf("got %p want %p (same *sql.DB)", got.DB(), db)
+	}
+	if got.Settings().UID != "x" {
+		t.Fatalf("got settings UID %q want %q", got.Settings().UID, "x")
 	}
 }
 
 func TestSyncMapCache_LoadMissingKey(t *testing.T) {
 	c := NewSyncMapCache()
 	got, ok := c.Load("nope")
-	if ok || got != nil {
-		t.Fatalf("got (%v, %v) want (nil, false)", got, ok)
+	if ok || got.DB() != nil {
+		t.Fatalf("got (%v, %v) want (zero, false)", got, ok)
 	}
 }
 
 func TestSyncMapCache_StoreOverwrite(t *testing.T) {
 	c := NewSyncMapCache()
-	v1 := &stubConn{id: "first"}
-	v2 := &stubConn{id: "second"}
-	c.Store("k", v1)
-	c.Store("k", v2)
+	first, second := newCacheTestDB(), newCacheTestDB()
+	c.Store("k", CachedConnection{db: first})
+	c.Store("k", CachedConnection{db: second})
 	got, _ := c.Load("k")
-	if got != v2 {
-		t.Fatalf("got %v want second-stored value", got)
+	if got.DB() != second {
+		t.Fatalf("got %p want second-stored *sql.DB %p", got.DB(), second)
 	}
 }
 
@@ -63,7 +61,7 @@ func TestSyncMapCache_RangeIteratesEveryEntry(t *testing.T) {
 	c := NewSyncMapCache()
 	keys := []string{"a", "b", "c", "d"}
 	for _, k := range keys {
-		c.Store(k, &stubConn{id: k})
+		c.Store(k, CachedConnection{db: newCacheTestDB()})
 	}
 
 	seen := make(map[string]bool)
@@ -84,7 +82,7 @@ func TestSyncMapCache_RangeIteratesEveryEntry(t *testing.T) {
 func TestSyncMapCache_RangeStopsEarly(t *testing.T) {
 	c := NewSyncMapCache()
 	for _, k := range []string{"a", "b", "c", "d"} {
-		c.Store(k, &stubConn{id: k})
+		c.Store(k, CachedConnection{db: newCacheTestDB()})
 	}
 	calls := 0
 	c.Range(func(string, CachedConnection) bool {
@@ -98,16 +96,16 @@ func TestSyncMapCache_RangeStopsEarly(t *testing.T) {
 
 func TestSyncMapCache_DisposeClosesEveryEntry(t *testing.T) {
 	c := NewSyncMapCache()
-	entries := []*stubConn{{id: "a"}, {id: "b"}, {id: "c"}}
-	for _, e := range entries {
-		c.Store(e.id, e)
+	dbs := map[string]*sql.DB{"a": newCacheTestDB(), "b": newCacheTestDB(), "c": newCacheTestDB()}
+	for k, db := range dbs {
+		c.Store(k, CachedConnection{db: db})
 	}
 
 	c.Dispose()
 
-	for _, e := range entries {
-		if e.closed.Load() != 1 {
-			t.Fatalf("entry %q Close called %d times, want 1", e.id, e.closed.Load())
+	for k, db := range dbs {
+		if !dbClosed(db) {
+			t.Fatalf("entry %q not closed after Dispose", k)
 		}
 	}
 	if _, ok := c.Load("a"); ok {
@@ -124,7 +122,7 @@ func TestSyncMapCache_ConcurrentAccess(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			c.Store(strconv.Itoa(i), &stubConn{id: strconv.Itoa(i)})
+			c.Store(strconv.Itoa(i), CachedConnection{settings: backend.DataSourceInstanceSettings{UID: strconv.Itoa(i)}})
 		}()
 		go func() {
 			defer wg.Done()
@@ -138,8 +136,3 @@ func TestSyncMapCache_ConcurrentAccess(t *testing.T) {
 		}
 	}
 }
-
-// Compile-time assertion that dbConnection satisfies CachedConnection via
-// its adapter methods. The check lives in the test file so it catches a
-// future signature change without leaking into the production binary.
-var _ CachedConnection = dbConnection{}

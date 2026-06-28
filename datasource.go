@@ -46,20 +46,28 @@ func keyWithConnectionArgs(datasourceUID string, connArgs json.RawMessage) strin
 	return fmt.Sprintf("%s-%x", datasourceUID, connectionArgsHash)
 }
 
-type dbConnection struct {
+// CachedConnection is the value type held by a ConnectionCache. It pairs the
+// underlying *sql.DB with the DataSourceInstanceSettings captured when the
+// connection was opened and exposes them, plus a Close lifecycle method,
+// through exported accessors. The fields stay unexported: sqlds constructs
+// every CachedConnection, and ConnectionCache implementations handle them as
+// opaque cache entries (inspecting via the accessors, closing via Close on
+// eviction).
+type CachedConnection struct {
 	db       *sql.DB
 	settings backend.DataSourceInstanceSettings
 }
 
-// dbConnection satisfies the CachedConnection interface via these three
-// adapter methods. The struct itself and the internal field-access patterns
-// (`dbConn.db`, `dbConn.settings`) elsewhere in the package are unchanged —
-// the methods exist only to expose the existing state through the public
-// interface for use by ConnectionCache implementations.
+// DB returns the underlying *sql.DB.
+func (c CachedConnection) DB() *sql.DB { return c.db }
 
-func (d dbConnection) DB() *sql.DB                                  { return d.db }
-func (d dbConnection) Settings() backend.DataSourceInstanceSettings { return d.settings }
-func (d dbConnection) Close() error                                 { return d.db.Close() }
+// Settings returns the DataSourceInstanceSettings captured when the
+// connection was opened.
+func (c CachedConnection) Settings() backend.DataSourceInstanceSettings { return c.settings }
+
+// Close closes the underlying *sql.DB. It is safe to call multiple times;
+// subsequent calls return the same error database/sql would return.
+func (c CachedConnection) Close() error { return c.db.Close() }
 
 type SQLDatasource struct {
 	Completable
