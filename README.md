@@ -30,18 +30,31 @@ The `sqlds` package formerly defined a set of default macros, but those have bee
 
 ### Pluggable interpolator
 
-`SQLDatasource.Interpolator` accepts any implementation of the
-`Interpolator` interface:
+`SQLDatasource.Interpolator` is a func field that produces the SQL reaching
+the driver:
 
 ```go
-type Interpolator interface {
-    Interpolate(ctx context.Context, ds *SQLDatasource, query *sqlutil.Query, rawJSON json.RawMessage) (string, error)
+type Interpolator func(ctx context.Context, query *sqlutil.Query, rawJSON json.RawMessage) (string, error)
+```
+
+`NewDatasource` installs a default that delegates to `sqlutil.Interpolate`
+over the driver's `Macros()` — byte-for-byte equivalent to the pre-extension
+default. Override it by assigning your own func (for example an AST-aware
+rewriter or a [`macropro`](https://github.com/grafana/macropro)-backed
+handler):
+
+```go
+ds := sqlds.NewDatasource(driver)
+ds.Interpolator = func(ctx context.Context, q *sqlutil.Query, rawJSON json.RawMessage) (string, error) {
+    return myRewriter.Interpolate(ctx, q, rawJSON)
 }
 ```
 
-A nil `Interpolator` falls back to `DefaultInterpolator{}`, which delegates
-to `sqlutil.Interpolate` — byte-for-byte equivalent to the pre-extension
-default.
+`rawJSON` carries the unparsed query JSON: `sqlutil.Query` keeps only its
+fixed fields and drops the rest, so it's the channel for plugin-defined macro
+context. A nil `Interpolator` resolves to the default, so a zero-value
+`SQLDatasource` built without `NewDatasource` still interpolates.
+
 
 ### Pluggable connection cache
 

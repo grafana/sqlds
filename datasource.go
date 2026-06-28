@@ -91,9 +91,11 @@ type SQLDatasource struct {
 	// ResourceMiddleware (optional). Allows interception to CallResource before it is passed to sqlds
 	ResourceMiddleware func(next backend.CallResourceHandler) backend.CallResourceHandler
 
-	// Interpolator (optional). When non-nil, replaces the default interpolation
-	// pipeline. Plugins use this to install AST-aware or otherwise customised
-	// implementations. A nil value resolves to DefaultInterpolator{}.
+	// Interpolator (optional). Produces the SQL that reaches the driver.
+	// NewDatasource installs a default that runs the driver's legacy macros;
+	// assign your own func to replace the pipeline (e.g. an AST-aware rewriter
+	// or a macropro-backed handler). A nil value resolves to the default, so a
+	// zero-value SQLDatasource built without NewDatasource still interpolates.
 	Interpolator Interpolator
 
 	// ConnectionCacheFactory (optional). When non-nil, the Connector invokes
@@ -148,6 +150,7 @@ func NewDatasource(c Driver) *SQLDatasource {
 	ds.queryArgSetter, _ = c.(QueryArgSetter)
 	ds.queryErrorMutator, _ = c.(QueryErrorMutator)
 	ds.checkHealthMutator, _ = c.(CheckHealthMutator)
+	ds.Interpolator = defaultInterpolator(ds)
 	return ds
 }
 
