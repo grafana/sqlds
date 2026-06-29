@@ -66,8 +66,14 @@ func (c CachedConnection) DB() *sql.DB { return c.db }
 func (c CachedConnection) Settings() backend.DataSourceInstanceSettings { return c.settings }
 
 // Close closes the underlying *sql.DB. It is safe to call multiple times;
-// subsequent calls return the same error database/sql would return.
-func (c CachedConnection) Close() error { return c.db.Close() }
+// subsequent calls return the same error database/sql would return. A zero
+// value or empty cache slot (nil db) is a no-op.
+func (c CachedConnection) Close() error {
+	if c.db == nil {
+		return nil
+	}
+	return c.db.Close()
+}
 
 type SQLDatasource struct {
 	Completable

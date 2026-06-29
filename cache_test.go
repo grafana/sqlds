@@ -113,6 +113,27 @@ func TestSyncMapCache_DisposeClosesEveryEntry(t *testing.T) {
 	}
 }
 
+func TestCachedConnection_CloseZeroValue(t *testing.T) {
+	// A zero value (and equivalently an empty cache slot) has a nil db. Close
+	// must treat it as a no-op rather than panicking, since it is a public
+	// method on an exported type.
+	var c CachedConnection
+	if err := c.Close(); err != nil {
+		t.Fatalf("zero-value Close returned %v, want nil", err)
+	}
+}
+
+func TestCachedConnection_CloseClosesDB(t *testing.T) {
+	db := newCacheTestDB()
+	c := CachedConnection{db: db}
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close returned %v, want nil", err)
+	}
+	if !dbClosed(db) {
+		t.Fatal("underlying *sql.DB not closed after Close")
+	}
+}
+
 func TestSyncMapCache_ConcurrentAccess(t *testing.T) {
 	c := NewSyncMapCache()
 	const N = 200
