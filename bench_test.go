@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 }
 
 // newBenchDS builds a minimal SQLDatasource whose Connector is pre-populated
-// with a stored dbConnection under the default key. The DB handle is nil;
+// with a stored CachedConnection under the default key. The DB handle is nil;
 // benchmarks that don't dereference it are safe (e.g. GetConnectionFromQuery
 // on the cached-hit single-connection path).
 func newBenchDS(driver Driver) *SQLDatasource {
@@ -33,7 +33,7 @@ func newBenchDS(driver Driver) *SQLDatasource {
 	ds.connector.UID = "bench-uid"
 	ds.connector.driverSettings = DriverSettings{}
 	ds.connector.defaultKey = defaultKey(ds.connector.UID)
-	ds.connector.storeDBConnection(ds.connector.defaultKey, dbConnection{
+	ds.connector.storeDBConnection(ds.connector.defaultKey, CachedConnection{
 		db:       nil,
 		settings: backend.DataSourceInstanceSettings{UID: "bench-uid", Name: "bench"},
 	})

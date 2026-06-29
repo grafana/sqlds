@@ -21,7 +21,7 @@ func newDS(legacy sqlutil.Macros) *SQLDatasource {
 		legacy = sqlutil.Macros{}
 	}
 	return &SQLDatasource{
-		connector: &Connector{driver: &macroDriver{macros: legacy}},
+		connector: &Connector{driver: &macroDriver{macros: legacy}, cache: NewSyncMapCache()},
 	}
 }
 

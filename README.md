@@ -54,3 +54,31 @@ ds.Interpolator = func(ctx context.Context, q *sqlutil.Query, rawJSON json.RawMe
 fixed fields and drops the rest, so it's the channel for plugin-defined macro
 context. A nil `Interpolator` resolves to the default, so a zero-value
 `SQLDatasource` built without `NewDatasource` still interpolates.
+
+
+### Pluggable connection cache
+
+`SQLDatasource.ConnectionCacheFactory` accepts a factory function that
+returns any implementation of the `ConnectionCache` interface:
+
+```go
+type ConnectionCache interface {
+    Load(key string) (CachedConnection, bool)
+    Store(key string, v CachedConnection)
+    Range(f func(key string, v CachedConnection) bool)
+    Dispose()
+}
+```
+
+The cache traffics in `CachedConnection`, an exported concrete value type
+that pairs the underlying `*sql.DB` with the captured
+`DataSourceInstanceSettings`. Its fields are unexported; read them through
+the `DB()`/`Settings()` accessors and release the connection with `Close()`.
+Because it is a plain value, a plugin's TTL cache can be as simple as a
+mutex-guarded `map[string]CachedConnection`.
+
+The factory is invoked once per `Connector` during datasource construction;
+plugins capture their own configuration (TTL, size cap, dependencies) in
+the closure. A nil factory falls back to `NewSyncMapCache()`, which is
+behaviourally equivalent to the pre-extension `sync.Map`-backed storage
+(no eviction, no background goroutines).

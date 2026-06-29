@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -14,7 +13,7 @@ import (
 
 type Connector struct {
 	UID            string
-	connections    sync.Map
+	cache          ConnectionCache
 	driver         Driver
 	driverSettings DriverSettings
 	// defaultKey is the cache key for the single-connection path. It is
@@ -27,7 +26,18 @@ type Connector struct {
 	enableMultipleConnections bool
 }
 
-func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool) (*Connector, error) {
+// ConnectorOption configures a Connector at construction time.
+type ConnectorOption func(*Connector)
+
+// WithCache installs a custom ConnectionCache on the Connector. When omitted,
+// NewConnector defaults to NewSyncMapCache(). The option is applied before
+// the bootstrap connection is stored, so the bootstrap entry lands in the
+// custom cache.
+func WithCache(cache ConnectionCache) ConnectorOption {
+	return func(c *Connector) { c.cache = cache }
+}
+
+func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool, opts ...ConnectorOption) (*Connector, error) {
 	ds := driver.Settings(ctx, settings)
 	db, err := driver.Connect(ctx, settings, nil)
 	if err != nil {
@@ -41,11 +51,17 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 		defaultKey:                defaultKey(settings.UID),
 		enableMultipleConnections: enableMultipleConnections,
 	}
-	conn.storeDBConnection(conn.defaultKey, dbConnection{db, settings})
+	for _, opt := range opts {
+		opt(conn)
+	}
+	if conn.cache == nil {
+		conn.cache = NewSyncMapCache()
+	}
+	conn.storeDBConnection(conn.defaultKey, CachedConnection{db, settings})
 	return conn, nil
 }
 
-func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnection, error) {
+func (c *Connector) Connect(ctx context.Context, headers http.Header) (*CachedConnection, error) {
 	key := c.defaultKey
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
@@ -61,7 +77,7 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*dbConnec
 	return &dbConn, err
 }
 
-func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, key string, headers http.Header) error {
+func (c *Connector) connectWithRetries(ctx context.Context, conn CachedConnection, key string, headers http.Header) error {
 	q := &Query{}
 	if c.driverSettings.ForwardHeaders {
 		applyHeaders(q, headers)
@@ -74,7 +90,7 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 		if err != nil {
 			return err
 		}
-		conn := dbConnection{
+		conn := CachedConnection{
 			db:       db,
 			settings: conn.settings,
 		}
@@ -100,7 +116,7 @@ func (c *Connector) connectWithRetries(ctx context.Context, conn dbConnection, k
 	return err
 }
 
-func (c *Connector) connect(ctx context.Context, conn dbConnection) error {
+func (c *Connector) connect(ctx context.Context, conn CachedConnection) error {
 	if err := c.ping(ctx, conn); err != nil {
 		return backend.DownstreamError(err)
 	}
@@ -108,7 +124,7 @@ func (c *Connector) connect(ctx context.Context, conn dbConnection) error {
 	return nil
 }
 
-func (c *Connector) ping(ctx context.Context, conn dbConnection) error {
+func (c *Connector) ping(ctx context.Context, conn CachedConnection) error {
 	if c.driverSettings.Timeout == 0 {
 		return conn.db.PingContext(ctx)
 	}
@@ -119,7 +135,7 @@ func (c *Connector) ping(ctx context.Context, conn dbConnection) error {
 	return conn.db.PingContext(ctx)
 }
 
-func (c *Connector) Reconnect(ctx context.Context, dbConn dbConnection, q *Query, cacheKey string) (*sql.DB, error) {
+func (c *Connector) Reconnect(ctx context.Context, dbConn CachedConnection, q *Query, cacheKey string) (*sql.DB, error) {
 	if err := dbConn.db.Close(); err != nil {
 		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
 	}
@@ -128,47 +144,51 @@ func (c *Connector) Reconnect(ctx context.Context, dbConn dbConnection, q *Query
 	if err != nil {
 		return nil, backend.DownstreamError(err)
 	}
-	c.storeDBConnection(cacheKey, dbConnection{db, dbConn.settings})
+	c.storeDBConnection(cacheKey, CachedConnection{db, dbConn.settings})
 	return db, nil
 }
 
-func (ds *Connector) getDBConnection(key string) (dbConnection, bool) {
-	conn, ok := ds.connections.Load(key)
-	if !ok {
-		return dbConnection{}, false
+// connCache returns the Connector's ConnectionCache, lazily installing the
+// default sync.Map-backed cache if none is set. NewConnector always installs a
+// cache, so the lazy path only covers Connector literals built outside this
+// package (e.g. test fixtures). Routing every cache access through this single
+// helper keeps the nil policy uniform across get/store/Dispose.
+func (c *Connector) connCache() ConnectionCache {
+	if c.cache == nil {
+		c.cache = NewSyncMapCache()
 	}
-	return conn.(dbConnection), true
+	return c.cache
 }
 
-func (ds *Connector) storeDBConnection(key string, dbConn dbConnection) {
-	ds.connections.Store(key, dbConn)
+func (c *Connector) getDBConnection(key string) (CachedConnection, bool) {
+	return c.connCache().Load(key)
+}
+
+func (c *Connector) storeDBConnection(key string, dbConn CachedConnection) {
+	c.connCache().Store(key, dbConn)
 }
 
 // Dispose is called when an existing SQLDatasource needs to be replaced
 func (c *Connector) Dispose() {
-	c.connections.Range(func(_, conn interface{}) bool {
-		_ = conn.(dbConnection).db.Close()
-		return true
-	})
-	c.connections.Clear()
+	c.connCache().Dispose()
 }
 
-func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, dbConnection, error) {
+func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, CachedConnection, error) {
 	if !c.enableMultipleConnections && !c.driverSettings.ForwardHeaders && len(q.ConnectionArgs) > 0 && string(q.ConnectionArgs) != "{}" {
-		return "", dbConnection{}, MissingMultipleConnectionsConfig
+		return "", CachedConnection{}, MissingMultipleConnectionsConfig
 	}
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
 	key := c.defaultKey
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
-		return "", dbConnection{}, MissingDBConnection
+		return "", CachedConnection{}, MissingDBConnection
 	}
 	if !c.enableMultipleConnections || len(q.ConnectionArgs) == 0 {
 		backend.Logger.Debug("using single user connection")
 		return key, dbConn, nil
 	}
-	
+
 	key = keyWithConnectionArgs(c.UID, q.ConnectionArgs)
 	if cachedConn, ok := c.getDBConnection(key); ok {
 		backend.Logger.Debug("cached connection")
@@ -178,11 +198,11 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		backend.Logger.Debug("connect error " + err.Error())
-		return "", dbConnection{}, backend.DownstreamError(err)
+		return "", CachedConnection{}, backend.DownstreamError(err)
 	}
 	backend.Logger.Debug("new connection(multiple) created")
 	// Assign this connection in the cache
-	dbConn = dbConnection{db, dbConn.settings}
+	dbConn = CachedConnection{db, dbConn.settings}
 	c.storeDBConnection(key, dbConn)
 
 	return key, dbConn, nil
