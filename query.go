@@ -119,10 +119,6 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator Query
 	if err := rows.Err(); err != nil {
 		queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
 		errWithSource := backend.NewErrorWithSource(queryErr, backend.DefaultErrorSource)
-		if isConnectionClosedError(err) {
-			q.metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
-			return sqlutil.ErrorFrameFromQuery(query), backend.DownstreamErrorf("%w: %w", ErrorQuery, err)
-		}
 		if errors.Is(err, sql.ErrNoRows) {
 			// Should we even response with an error here?
 			// The panel will simply show "no data"
