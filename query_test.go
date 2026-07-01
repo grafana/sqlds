@@ -27,6 +27,9 @@ type testConnection struct {
 
 	QueryWait     time.Duration
 	QueryRunCount int
+	// QueryErr, when set, is returned immediately by QueryContext instead of
+	// the default errorQueryCompleted.
+	QueryErr error
 }
 
 func (t *testConnection) Close() error {
@@ -55,6 +58,10 @@ func (t *testConnection) PingContext(ctx context.Context) error {
 
 func (t *testConnection) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	t.QueryRunCount++
+
+	if t.QueryErr != nil {
+		return nil, t.QueryErr
+	}
 
 	done := make(chan bool)
 	go func() {
@@ -351,6 +358,38 @@ func TestRun_ErrorQueryWrapping(t *testing.T) {
 		require.True(t, errors.Is(receivedErr, ErrorQuery), "Mutator should receive ErrorQuery-wrapped error")
 		require.True(t, errors.Is(receivedErr, errorQueryCompleted), "Original error should be in chain")
 	})
+}
+
+func TestRun_ConnectionClosedIsDownstream(t *testing.T) {
+	settings := backend.DataSourceInstanceSettings{Name: "test"}
+	query := &Query{RawSQL: "SELECT * FROM test", RefID: "A"}
+
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"sql: database is closed", errors.New("sql: database is closed")},
+		{"wrapped database is closed", fmt.Errorf("driver failure: %w", errors.New("sql: database is closed"))},
+		{"sql.ErrConnDone", sql.ErrConnDone},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := &testConnection{QueryErr: tc.err}
+			dbQuery := NewQuery(conn, settings, []sqlutil.Converter{}, nil, defaultRowLimit)
+
+			// A driver mutator that would otherwise misclassify as plugin must
+			// not override the connection-closed downstream classification.
+			_, err := dbQuery.Run(context.Background(), query, &mockErrorMutator{shouldMutate: false})
+
+			require.Error(t, err)
+			require.True(t, errors.Is(err, ErrorQuery), "should be wrapped with ErrorQuery")
+			var errWithSource backend.ErrorWithSource
+			require.True(t, errors.As(err, &errWithSource), "should implement ErrorWithSource")
+			require.Equal(t, backend.ErrorSourceDownstream, errWithSource.ErrorSource(),
+				"closed connection pool must be classified as downstream")
+		})
+	}
 }
 
 func TestCollectResponseSize(t *testing.T) {

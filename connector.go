@@ -170,7 +170,16 @@ func (c *Connector) storeDBConnection(key string, dbConn CachedConnection) {
 
 // Dispose is called when an existing SQLDatasource needs to be replaced
 func (c *Connector) Dispose() {
-	c.connCache().Dispose()
+	cache := c.connCache()
+	// Log each pool being torn down before delegating the actual close to the
+	// cache. Disposal is otherwise silent, so an over-aggressive disposal
+	// (e.g. settings churn) can't be correlated with the closed-pool downstream
+	// errors it produces (see isConnectionClosedError / DBQuery.Run).
+	cache.Range(func(key string, _ CachedConnection) bool {
+		backend.Logger.Debug("disposing db connection pool", "key", key)
+		return true
+	})
+	cache.Dispose()
 }
 
 func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (string, CachedConnection, error) {

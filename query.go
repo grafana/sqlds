@@ -89,6 +89,18 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator Query
 			return sqlutil.ErrorFrameFromQuery(query), errWithSource
 		}
 
+		// A closed connection pool is collateral from sqlds tearing down or
+		// reconnecting the shared *sql.DB (see Connector.Dispose / Reconnect),
+		// not a plugin fault. Classify it as downstream so it does not count
+		// against the plugin's error budget.
+		if isConnectionClosedError(err) {
+			backend.Logger.Debug("query hit a closed connection pool; classifying as downstream",
+				"refID", query.RefID, "error", err.Error())
+			queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
+			errWithSource = backend.NewErrorWithSource(queryErr, backend.ErrorSourceDownstream)
+			return sqlutil.ErrorFrameFromQuery(query), errWithSource
+		}
+
 		// Wrap with ErrorQuery to enable retry logic in datasource
 		queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
 
