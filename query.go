@@ -94,6 +94,8 @@ func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator Query
 		// not a plugin fault. Classify it as downstream so it does not count
 		// against the plugin's error budget.
 		if isConnectionClosedError(err) {
+			backend.Logger.Debug("query hit a closed connection pool; classifying as downstream",
+				"refID", query.RefID, "error", err.Error())
 			queryErr := fmt.Errorf("%w: %w", ErrorQuery, err)
 			errWithSource = backend.NewErrorWithSource(queryErr, backend.ErrorSourceDownstream)
 			return sqlutil.ErrorFrameFromQuery(query), errWithSource
