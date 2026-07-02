@@ -5,15 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.1.3]
-- Revert #281 (#286)
-- Fix: don't close the database if we can't create a new connection (#287)
+## [5.2.0]
 
-## [5.1.2]
+### Added
+
+- feat: emit response-size histograms from DBQuery by @adamyeats in #241
+- perf: reduce per-query allocations on hot path by @adamyeats in #239
+- Security improvements by @aangelisc in #255
+- Add pluggable Interpolator extension point by @odemkovych in #269
+- Add pluggable ConnectionCache extension point by @odemkovych in #267
 
 ### Fixed
 
-- Classify a closed connection pool (`sql: database is closed` / `sql.ErrConnDone`) as a downstream error instead of a plugin error. This error is collateral from sqlds tearing down or reconnecting the shared `*sql.DB` while a concurrent query is in flight, not a plugin fault. (#281)
+- Remove unneeded workflow by @aangelisc in #266
+- Fix: don't close the database if we can't create a new connection by @njvrzm in #287
+
+### Dependencies
+
+- chore(deps): update actions/checkout action to v6.0.3 by @renovate-sh-app[bot] in #265
+- fix(deps): update module github.com/grafana/grafana-plugin-sdk-go to v0.292.1 by @renovate-sh-app[bot] in #259
+- fix(security/unknown/): update security golang.org/x/crypto to v0.52.0 [security] by @renovate-sh-app[bot] in #262
+- chore(deps): update mysql docker tag to v9.7 by @renovate-sh-app[bot] in #257
+- chore(deps): update mysql:9.7 docker digest to e370cd5 by @renovate-sh-app[bot] in #268
+- chore(deps): update actions/checkout action to v7 by @renovate-sh-app[bot] in #270
+- chore(deps): update module go.yaml.in/yaml/v2 to v2.4.4 by @renovate-sh-app[bot] in #280
+- chore(deps): update module github.com/pierrec/lz4/v4 to v4.1.27 by @renovate-sh-app[bot] in #279
+- chore(deps): update module github.com/olekukonko/ll to v0.1.8 by @renovate-sh-app[bot] in #278
+- chore(deps): update module github.com/mattn/go-runewidth to v0.0.24 by @renovate-sh-app[bot] in #277
 
 ## [5.1.1]
 
