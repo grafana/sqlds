@@ -136,14 +136,15 @@ func (c *Connector) ping(ctx context.Context, conn CachedConnection) error {
 }
 
 func (c *Connector) Reconnect(ctx context.Context, dbConn CachedConnection, q *Query, cacheKey string) (*sql.DB, error) {
-	if err := dbConn.db.Close(); err != nil {
-		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
-	}
-
 	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		return nil, backend.DownstreamError(err)
 	}
+
+	if err = dbConn.db.Close(); err != nil {
+		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
+	}
+
 	c.storeDBConnection(cacheKey, CachedConnection{db, dbConn.settings})
 	return db, nil
 }
