@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.3]
+- Revert #281 (#286)
+- Fix: don't close the database if we can't create a new connection (#287)
+
 ## [5.1.2]
 
 ### Fixed
 
-- Classify a closed connection pool (`sql: database is closed` / `sql.ErrConnDone`) as a downstream error instead of a plugin error. This error is collateral from sqlds tearing down or reconnecting the shared `*sql.DB` while a concurrent query is in flight, not a plugin fault.
+- Classify a closed connection pool (`sql: database is closed` / `sql.ErrConnDone`) as a downstream error instead of a plugin error. This error is collateral from sqlds tearing down or reconnecting the shared `*sql.DB` while a concurrent query is in flight, not a plugin fault. (#281)
 
 ## [5.1.1]
 
