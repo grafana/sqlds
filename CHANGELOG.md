@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0]
+
+### Added
+
+- perf: Plumb RowCapacityHint through DBQuery to presize frame fields by @adamyeats in #240
+- Add add-to-project workflow by @aangelisc in #290
+
+### Dependencies
+
+- chore: use shared data-sources Renovate base preset by @aangelisc in #291
+- chore(deps): update backend dependencies (major) by @renovate-sh-app[bot] in #294
+
 ## [5.2.0]
 
 ### Added
