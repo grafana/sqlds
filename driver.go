@@ -21,6 +21,13 @@ type DriverSettings struct {
 	ForwardHeaders bool
 	Errors         bool
 	RowLimit       int64
+	// RowCapacityHint is an optional expected row count, used to presize
+	// data.Frame fields before scanning rows. Set to 0 (the default) to
+	// preserve the historical behavior of growing Fields as rows arrive.
+	// Drivers that can estimate a floor (paginated queries, COUNT-first
+	// patterns, statements with a hard LIMIT) should set this to avoid
+	// per-column slice growth during FrameFromRows.
+	RowCapacityHint int64
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource
