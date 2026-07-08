@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -144,6 +145,51 @@ func TestObserve_AppURLAbsent_EmptyField(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, rec.entries, 1)
 	assert.Equal(t, "", rec.entries[0].kv()["app_url"])
+}
+
+func TestObserve_Cross_IncrementsCounter(t *testing.T) {
+	swapLogger(t)
+
+	ds := backend.DataSourceInstanceSettings{Type: "counter-cross", UID: "ds-uid-1"}
+	appURL := "https://counter-cross.grafana.net/"
+	cfg := backend.NewGrafanaCfg(map[string]string{backend.AppURL: appURL})
+	ctx := backend.WithGrafanaConfig(context.Background(), cfg)
+
+	before := counterValue(t, ds.Type, appURL, ds.UID)
+	ok := Observe(ctx,
+		Observation{Datasource: ds, Rows: DefaultRowsThreshold},
+		Thresholds{Rows: DefaultRowsThreshold})
+
+	require.True(t, ok)
+	assert.Equal(t, before+1, counterValue(t, ds.Type, appURL, ds.UID))
+}
+
+func TestObserve_NoCross_DoesNotIncrementCounter(t *testing.T) {
+	swapLogger(t)
+
+	ds := backend.DataSourceInstanceSettings{Type: "counter-nocross", UID: "ds-uid-2"}
+
+	before := counterValue(t, ds.Type, "", ds.UID)
+	ok := Observe(context.Background(),
+		Observation{Datasource: ds, Rows: 10},
+		Thresholds{Rows: 1000})
+
+	require.False(t, ok)
+	assert.Equal(t, before, counterValue(t, ds.Type, "", ds.UID))
+}
+
+// counterValue reads the large-responses counter for a given label set.
+// Returns 0 if the series has not been created yet.
+func counterValue(t *testing.T, dsType, appURL, dsUID string) float64 {
+	t.Helper()
+	c, err := largeResponsesCounter.GetMetricWithLabelValues(dsType, appURL, dsUID)
+	require.NoError(t, err)
+	m := &dto.Metric{}
+	require.NoError(t, c.Write(m))
+	if m.Counter == nil {
+		return 0
+	}
+	return m.Counter.GetValue()
 }
 
 // swapLogger replaces backend.Logger with a recording logger for the
