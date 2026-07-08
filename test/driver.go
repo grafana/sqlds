@@ -179,7 +179,7 @@ func (s TestDS) Macros() sqlds.Macros {
 
 // Converters - Converters for the test database
 func (s TestDS) Converters() []sqlutil.Converter {
-	return nil
+	return s.converters
 }
 
 // DriverOpts the optional settings
