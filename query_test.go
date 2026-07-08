@@ -267,7 +267,7 @@ func TestDBQuery_WithRowCapacityHint(t *testing.T) {
 		require.Same(t, q, q.WithRowCapacityHint(100))
 	})
 
-	t.Run("zero hint is the documented no-presize sentinel", func(t *testing.T) {
+	t.Run("setting hint to zero overwrites a previous value", func(t *testing.T) {
 		q := NewQuery(conn, settings, nil, nil, defaultRowLimit).
 			WithRowCapacityHint(1000).
 			WithRowCapacityHint(0)
