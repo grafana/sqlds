@@ -60,6 +60,15 @@ func (t *testConnection) PingContext(ctx context.Context) error {
 func (t *testConnection) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	t.QueryRunCount++
 
+	// Report an already-cancelled context before racing it against the wait. With
+	// QueryWait of 0 the wait completes immediately, so both select cases below
+	// are ready at once and Go picks one at random: a test that cancels up front
+	// would then see errorQueryCompleted instead of context.Canceled roughly one
+	// run in ten.
+	if ctx.Err() != nil {
+		return nil, context.Canceled
+	}
+
 	done := make(chan bool)
 	go func() {
 		time.Sleep(t.QueryWait)
@@ -490,9 +499,9 @@ func (l *recordingBackendLogger) Warn(msg string, args ...interface{}) {
 func (l *recordingBackendLogger) Error(msg string, args ...interface{}) {
 	l.record(log.Error, msg, args)
 }
-func (l *recordingBackendLogger) With(_ ...interface{}) log.Logger          { return l }
-func (l *recordingBackendLogger) Level() log.Level                          { return log.Debug }
-func (l *recordingBackendLogger) FromContext(_ context.Context) log.Logger  { return l }
+func (l *recordingBackendLogger) With(_ ...interface{}) log.Logger         { return l }
+func (l *recordingBackendLogger) Level() log.Level                         { return log.Debug }
+func (l *recordingBackendLogger) FromContext(_ context.Context) log.Logger { return l }
 
 // swapBackendLogger replaces backend.Logger with a recording logger for the
 // lifetime of the test and restores it on cleanup.
