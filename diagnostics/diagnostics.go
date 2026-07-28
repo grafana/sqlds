@@ -64,6 +64,31 @@ type Interaction = querycapture.Interaction
 // path, so a slow Recorder slows the user's query.
 type Recorder = querycapture.Recorder
 
+// ResultCapture collects the rows a database returned, bounded by
+// MaxResultBytes. sqlds creates one per query in DBQuery.Run and installs it on
+// the context it passes into row scanning, then reports what it collected on the
+// Interaction. See querycapture.ResultCapture.
+type ResultCapture = querycapture.ResultCapture
+
+// CapturedResult is what a ResultCapture collected: the column names, the
+// retained rows, whether they are a prefix, and the total row count.
+type CapturedResult = querycapture.CapturedResult
+
+// NewResultCapture returns an empty ResultCapture.
+func NewResultCapture() *ResultCapture { return querycapture.NewResultCapture() }
+
+// WithResultCapture returns a context whose row scanning collects returned rows
+// into c. A nil ResultCapture returns ctx unchanged.
+func WithResultCapture(ctx context.Context, c *ResultCapture) context.Context {
+	return querycapture.WithResultCapture(ctx, c)
+}
+
+// ResultCaptureFromContext returns the ResultCapture rows are collected into, if
+// any.
+func ResultCaptureFromContext(ctx context.Context) (*ResultCapture, bool) {
+	return querycapture.ResultCaptureFromContext(ctx)
+}
+
 // Kind values for the capture points that feed a Recorder. sqlds only emits
 // KindSQLQuery; the others are re-exported so consumers can switch on Kind
 // across capture points without importing a second package.
@@ -86,6 +111,10 @@ const (
 	MaxStatementBytes = querycapture.MaxStatementBytes
 	// MaxArgsBytes caps the aggregate size of Interaction.Args.
 	MaxArgsBytes = querycapture.MaxArgsBytes
+	// MaxResultBytes caps the returned rows one Interaction carries. It matches the
+	// cap the SDK's HTTP capture applies to a single response body: the rows a SQL
+	// datasource returns are the same evidence as the body an HTTP one returns.
+	MaxResultBytes = querycapture.MaxResultBytes
 )
 
 // WithRecorder returns a context that activates capture for every sqlds query

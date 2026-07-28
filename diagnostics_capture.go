@@ -17,7 +17,7 @@ import (
 // active. It must not alter the query's outcome, so every value it reports is
 // derived defensively and any problem gathering one is reported in the
 // Interaction instead of surfacing as an error.
-func (q *DBQuery) recordInteraction(rec diagnostics.Recorder, start time.Time, query *Query, args []interface{}, frames data.Frames, err error) {
+func (q *DBQuery) recordInteraction(rec diagnostics.Recorder, start time.Time, query *Query, args []interface{}, frames data.Frames, results *diagnostics.ResultCapture, err error) {
 	if rec == nil || query == nil {
 		return
 	}
@@ -25,21 +25,29 @@ func (q *DBQuery) recordInteraction(rec diagnostics.Recorder, start time.Time, q
 	statement, statementTruncated := truncateStatement(query.RawSQL)
 	renderedArgs, argsTruncated := renderArgs(args)
 	rowCount, frameCount := summarizeFrames(frames)
+	// A nil ResultCapture reads as "nothing was collected" rather than "no rows": the
+	// query may have failed before the driver returned anything, and Result reports the
+	// total as -1 so a consumer can tell the two apart.
+	captured := results.Result()
 
 	interaction := diagnostics.Interaction{
-		Kind:               diagnostics.KindSQLQuery,
-		StartedAt:          start,
-		Duration:           time.Since(start),
-		DatasourceUID:      q.Settings.UID,
-		DatasourceType:     q.Settings.Type,
-		DatasourceName:     q.DSName,
-		RefID:              query.RefID,
-		Statement:          statement,
-		StatementTruncated: statementTruncated,
-		Args:               renderedArgs,
-		ArgsTruncated:      argsTruncated,
-		FrameCount:         frameCount,
-		RowCount:           rowCount,
+		Kind:                diagnostics.KindSQLQuery,
+		StartedAt:           start,
+		Duration:            time.Since(start),
+		DatasourceUID:       q.Settings.UID,
+		DatasourceType:      q.Settings.Type,
+		DatasourceName:      q.DSName,
+		RefID:               query.RefID,
+		Statement:           statement,
+		StatementTruncated:  statementTruncated,
+		Args:                renderedArgs,
+		ArgsTruncated:       argsTruncated,
+		FrameCount:          frameCount,
+		RowCount:            rowCount,
+		ResultColumns:       captured.Columns,
+		ResultRows:          captured.Rows,
+		ResultRowsTruncated: captured.Truncated,
+		ResultTotalRows:     captured.TotalRows,
 	}
 	if err != nil {
 		interaction.Err = err.Error()
@@ -166,9 +174,11 @@ func (c *recordingConnection) QueryContext(ctx context.Context, query string, ar
 		Args:               renderedArgs,
 		ArgsTruncated:      argsTruncated,
 		// Rows are streamed and not consumed here, so this capture point cannot
-		// report how many came back without changing what the caller receives.
-		FrameCount: 0,
-		RowCount:   -1,
+		// report how many came back, nor what they held, without changing what the
+		// caller receives. -1 says "not determined"; zero would claim an empty result.
+		FrameCount:      0,
+		RowCount:        -1,
+		ResultTotalRows: -1,
 	}
 	if err != nil {
 		interaction.Err = err.Error()
