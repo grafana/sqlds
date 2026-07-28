@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 
+	"github.com/grafana/sqlds/v5/diagnostics"
 	"github.com/grafana/sqlds/v5/responseobs"
 )
 
@@ -98,8 +99,26 @@ func (q *DBQuery) WithResponseThresholds(t responseobs.Thresholds) *DBQuery {
 }
 
 // Run sends the query to the connection and converts the rows to a dataframe.
-func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator QueryErrorMutator, args ...interface{}) (data.Frames, error) {
+//
+// When a diagnostics.Recorder is present in ctx, Run records the statement it
+// executed, its bind arguments, how long the call took and what came back. This
+// is the SQL counterpart to the SDK's HTTP capture middleware: it is the only
+// point in sqlds that sees the interpolated SQL and the resulting frames
+// together. Capture is off, and Run behaves exactly as before, when no Recorder
+// is in ctx.
+//
+// The recording lives here rather than in SQLDatasource.handleQuery on purpose:
+// grafana-aws-sdk's async datasource calls NewQuery(...).Run(...) directly to
+// fetch the results of an Athena or Redshift query, bypassing handleQuery
+// entirely. Recording in Run covers that path with no change in grafana-aws-sdk.
+func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator QueryErrorMutator, args ...interface{}) (frames data.Frames, err error) {
 	start := time.Now()
+	if rec, ok := diagnostics.RecorderFromContext(ctx); ok {
+		// Deferred so that one Interaction covers every return path, including
+		// the error paths, and so Duration includes converting rows to frames.
+		// Registered first, so it runs after Run's other deferred work.
+		defer func() { q.recordInteraction(rec, start, query, args, frames, err) }()
+	}
 	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
 		var errWithSource backend.ErrorWithSource

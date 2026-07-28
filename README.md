@@ -82,3 +82,55 @@ plugins capture their own configuration (TTL, size cap, dependencies) in
 the closure. A nil factory falls back to `NewSyncMapCache()`, which is
 behaviourally equivalent to the pre-extension `sync.Map`-backed storage
 (no eviction, no background goroutines).
+
+
+### Query diagnostics capture
+
+Grafana's on-demand datasource diagnostics can show the HTTP traffic behind a
+failing panel, because the plugin SDK wraps the datasource's
+`http.RoundTripper`. SQL datasources have no such hop, so their diagnostic
+bundle shows the frames the plugin returned with nothing to compare them
+against — "the database returned the wrong rows" is indistinguishable from
+"the plugin mangled correct rows".
+
+The `diagnostics` package is the SQL counterpart of that middleware. A host
+installs a `Recorder` on the query context, and `DBQuery.Run` reports the
+statement it executed:
+
+```go
+type Recorder interface {
+    Record(Interaction)
+}
+
+ctx = diagnostics.WithRecorder(ctx, rec)
+```
+
+Each `Interaction` carries the interpolated SQL, its bind arguments, the
+datasource identity and refID, the duration, and either the row/frame counts
+or the error. That is the missing upstream side of the comparison: the SQL the
+database actually saw, next to what came back.
+
+`diagnostics.NewSliceRecorder` is a bounded, concurrency-safe reference
+implementation. Recorders are written to from several goroutines at once
+(sqlds runs one per refID) and run inline on the query path, so they must be
+safe for concurrent use and must not block.
+
+Two properties are deliberate:
+
+- **Capture is off unless a `Recorder` is in the context.** With none present,
+  `Run` behaves exactly as it did before, and nothing about the response
+  changes. Plugins need no code change to gain capture; they need only a
+  version bump.
+- **sqlds does not encode or return interactions.** Turning an `Interaction`
+  into a HAR entry and attaching it to the `QueryDataResponse` is the host's
+  job, so SQL and HTTP evidence can land in one document instead of competing
+  for the SDK's reserved `__har__` refID.
+
+`RecordingConnection` covers the paths that do not go through `DBQuery.Run` —
+a plugin that takes a connection from `GetDBFromQuery` and runs its own schema
+or completion queries.
+
+Interactions carry SQL text, bind arguments and result summaries, all of which
+can contain customer data and credentials. sqlds bounds their size
+(`MaxStatementBytes`, `MaxArgsBytes`) but does not redact them; redaction and
+retention are the `Recorder`'s responsibility.
