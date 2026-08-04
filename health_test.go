@@ -56,7 +56,7 @@ func TestHealthChecker_Check(t *testing.T) {
 			PostCheckHealth: func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult {
 				return &backend.CheckHealthResult{Status: backend.HealthStatusOk}
 			},
-			want: &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: "unable to get default db connection"},
+			want: &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: "failed to create mock"},
 		},
 		{
 			name:      "should not error when post check succeed",

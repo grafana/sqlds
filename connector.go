@@ -39,10 +39,6 @@ func WithCache(cache ConnectionCache) ConnectorOption {
 
 func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool, opts ...ConnectorOption) (*Connector, error) {
 	ds := driver.Settings(ctx, settings)
-	db, err := driver.Connect(ctx, settings, nil)
-	if err != nil {
-		return nil, backend.DownstreamError(err)
-	}
 
 	conn := &Connector{
 		UID:                       settings.UID,
@@ -57,6 +53,14 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 	if conn.cache == nil {
 		conn.cache = NewSyncMapCache()
 	}
+
+	db, err := driver.Connect(ctx, settings, nil)
+	if err != nil {
+		backend.Logger.Warn("bootstrap connect deferred; CallResource routes will still register", "error", err)
+		conn.storeDBConnection(conn.defaultKey, CachedConnection{db: nil, settings: settings})
+		return conn, nil
+	}
+
 	conn.storeDBConnection(conn.defaultKey, CachedConnection{db, settings})
 	return conn, nil
 }
@@ -66,6 +70,14 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*CachedCo
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
 		return nil, ErrorMissingDBConnection
+	}
+	if dbConn.db == nil {
+		db, err := c.driver.Connect(ctx, dbConn.settings, nil)
+		if err != nil {
+			return nil, backend.DownstreamError(err)
+		}
+		dbConn = CachedConnection{db: db, settings: dbConn.settings}
+		c.storeDBConnection(key, dbConn)
 	}
 
 	if c.driverSettings.Retries == 0 {
@@ -184,6 +196,14 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 	dbConn, ok := c.getDBConnection(key)
 	if !ok {
 		return "", CachedConnection{}, MissingDBConnection
+	}
+	if dbConn.db == nil {
+		db, err := c.driver.Connect(ctx, dbConn.settings, nil)
+		if err != nil {
+			return "", CachedConnection{}, backend.DownstreamError(err)
+		}
+		dbConn = CachedConnection{db: db, settings: dbConn.settings}
+		c.storeDBConnection(key, dbConn)
 	}
 	if !c.enableMultipleConnections || len(q.ConnectionArgs) == 0 {
 		backend.Logger.Debug("using single user connection")
