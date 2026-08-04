@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
@@ -68,5 +71,70 @@ func TestGetConnectionFromQuery_ConnectsWhenBootstrapDeferred(t *testing.T) {
 	}
 	if d.calls < 2 {
 		t.Fatalf("expected bootstrap + on-demand Connect calls, got %d", d.calls)
+	}
+}
+
+type concurrentDeferDriver struct {
+	live  *sql.DB
+	calls atomic.Int32
+	gate  chan struct{}
+}
+
+func (d *concurrentDeferDriver) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, _ json.RawMessage) (*sql.DB, error) {
+	if d.calls.Add(1) == 1 {
+		return nil, errors.New("not ready yet")
+	}
+	<-d.gate
+	return d.live, nil
+}
+
+func (d *concurrentDeferDriver) Settings(context.Context, backend.DataSourceInstanceSettings) DriverSettings {
+	return DriverSettings{}
+}
+func (d *concurrentDeferDriver) Macros() Macros                  { return Macros{} }
+func (d *concurrentDeferDriver) Converters() []sqlutil.Converter { return nil }
+
+func TestGetConnectionFromQuery_ConcurrentDeferredConnectOpensOnce(t *testing.T) {
+	const workers = 16
+
+	d := &concurrentDeferDriver{live: &sql.DB{}, gate: make(chan struct{})}
+	conn, err := NewConnector(context.Background(), d, backend.DataSourceInstanceSettings{UID: "uid"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, cached, err := conn.GetConnectionFromQuery(context.Background(), &Query{})
+			if err == nil && cached.db != d.live {
+				err = errors.New("expected cached live db")
+			}
+			errs <- err
+		}()
+	}
+
+	close(start)
+	deadline := time.Now().Add(time.Second)
+	for d.calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(25 * time.Millisecond)
+	close(d.gate)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := d.calls.Load(); got != 2 {
+		t.Fatalf("expected bootstrap plus one on-demand Connect call, got %d", got)
 	}
 }
