@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -20,6 +21,8 @@ type Connector struct {
 	// fmt.Sprintf("%s-default", UID) and never changes for the life of the
 	// connector, so we compute it once in NewConnector.
 	defaultKey string
+	// defaultDBMu serializes opening a deferred default connection.
+	defaultDBMu sync.Mutex
 	// Enabling multiple connections may cause that concurrent connection limits
 	// are hit. The datasource enabling this should make sure connections are cached
 	// if necessary.
@@ -37,12 +40,12 @@ func WithCache(cache ConnectionCache) ConnectorOption {
 	return func(c *Connector) { c.cache = cache }
 }
 
+// NewConnector creates a Connector. A failed initial driver.Connect is not
+// returned as an error: the Connector is still created so CallResource routes
+// can register, and connecting is retried on demand by the first query or
+// health check — which is where a persistent failure surfaces.
 func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool, opts ...ConnectorOption) (*Connector, error) {
 	ds := driver.Settings(ctx, settings)
-	db, err := driver.Connect(ctx, settings, nil)
-	if err != nil {
-		return nil, backend.DownstreamError(err)
-	}
 
 	conn := &Connector{
 		UID:                       settings.UID,
@@ -57,15 +60,23 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 	if conn.cache == nil {
 		conn.cache = NewSyncMapCache()
 	}
+
+	db, err := driver.Connect(ctx, settings, nil)
+	if err != nil {
+		backend.Logger.Warn("bootstrap connect deferred; CallResource routes will still register", "error", err)
+		conn.storeDBConnection(conn.defaultKey, CachedConnection{db: nil, settings: settings})
+		return conn, nil
+	}
+
 	conn.storeDBConnection(conn.defaultKey, CachedConnection{db, settings})
 	return conn, nil
 }
 
 func (c *Connector) Connect(ctx context.Context, headers http.Header) (*CachedConnection, error) {
 	key := c.defaultKey
-	dbConn, ok := c.getDBConnection(key)
-	if !ok {
-		return nil, ErrorMissingDBConnection
+	dbConn, err := c.ensureDefaultDB(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if c.driverSettings.Retries == 0 {
@@ -73,8 +84,37 @@ func (c *Connector) Connect(ctx context.Context, headers http.Header) (*CachedCo
 		return nil, err
 	}
 
-	err := c.connectWithRetries(ctx, dbConn, key, headers)
+	err = c.connectWithRetries(ctx, dbConn, key, headers)
 	return &dbConn, err
+}
+
+func (c *Connector) ensureDefaultDB(ctx context.Context) (CachedConnection, error) {
+	dbConn, ok := c.getDBConnection(c.defaultKey)
+	if !ok {
+		return CachedConnection{}, ErrorMissingDBConnection
+	}
+	if dbConn.db != nil {
+		return dbConn, nil
+	}
+
+	c.defaultDBMu.Lock()
+	defer c.defaultDBMu.Unlock()
+
+	dbConn, ok = c.getDBConnection(c.defaultKey)
+	if !ok {
+		return CachedConnection{}, ErrorMissingDBConnection
+	}
+	if dbConn.db != nil {
+		return dbConn, nil
+	}
+
+	db, err := c.driver.Connect(ctx, dbConn.settings, nil)
+	if err != nil {
+		return CachedConnection{}, backend.DownstreamError(err)
+	}
+	dbConn = CachedConnection{db: db, settings: dbConn.settings}
+	c.storeDBConnection(c.defaultKey, dbConn)
+	return dbConn, nil
 }
 
 func (c *Connector) connectWithRetries(ctx context.Context, conn CachedConnection, key string, headers http.Header) error {
@@ -141,8 +181,10 @@ func (c *Connector) Reconnect(ctx context.Context, dbConn CachedConnection, q *Q
 		return nil, backend.DownstreamError(err)
 	}
 
-	if err = dbConn.db.Close(); err != nil {
-		backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
+	if dbConn.db != nil {
+		if err = dbConn.db.Close(); err != nil {
+			backend.Logger.Warn(fmt.Sprintf("closing existing connection failed: %s", err.Error()))
+		}
 	}
 
 	c.storeDBConnection(cacheKey, CachedConnection{db, dbConn.settings})
@@ -181,9 +223,9 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 	// The database connection may vary depending on query arguments
 	// The raw arguments are used as key to store the db connection in memory so they can be reused
 	key := c.defaultKey
-	dbConn, ok := c.getDBConnection(key)
-	if !ok {
-		return "", CachedConnection{}, MissingDBConnection
+	dbConn, err := c.ensureDefaultDB(ctx)
+	if err != nil {
+		return "", CachedConnection{}, err
 	}
 	if !c.enableMultipleConnections || len(q.ConnectionArgs) == 0 {
 		backend.Logger.Debug("using single user connection")
