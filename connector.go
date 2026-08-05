@@ -40,6 +40,10 @@ func WithCache(cache ConnectionCache) ConnectorOption {
 	return func(c *Connector) { c.cache = cache }
 }
 
+// NewConnector creates a Connector. A failed initial driver.Connect is not
+// returned as an error: the Connector is still created so CallResource routes
+// can register, and connecting is retried on demand by the first query or
+// health check — which is where a persistent failure surfaces.
 func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourceInstanceSettings, enableMultipleConnections bool, opts ...ConnectorOption) (*Connector, error) {
 	ds := driver.Settings(ctx, settings)
 
