@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
 
+	"github.com/grafana/sqlds/v5/diagnostics"
 	"github.com/grafana/sqlds/v5/responseobs"
 )
 
@@ -98,8 +99,36 @@ func (q *DBQuery) WithResponseThresholds(t responseobs.Thresholds) *DBQuery {
 }
 
 // Run sends the query to the connection and converts the rows to a dataframe.
-func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator QueryErrorMutator, args ...interface{}) (data.Frames, error) {
+//
+// When a diagnostics.Recorder is present in ctx, Run records the statement it
+// executed, its bind arguments, how long the call took and what came back. This
+// is the SQL counterpart to the SDK's HTTP capture middleware: it is the only
+// point in sqlds that sees the interpolated SQL and the resulting frames
+// together. Capture is off, and Run behaves exactly as before, when no Recorder
+// is in ctx.
+//
+// The recording lives here rather than in SQLDatasource.handleQuery on purpose:
+// grafana-aws-sdk's async datasource calls NewQuery(...).Run(...) directly to
+// fetch the results of an Athena or Redshift query, bypassing handleQuery
+// entirely. Recording in Run covers that path with no change in grafana-aws-sdk.
+func (q *DBQuery) Run(ctx context.Context, query *Query, queryErrorMutator QueryErrorMutator, args ...interface{}) (frames data.Frames, err error) {
 	start := time.Now()
+	var results *diagnostics.ResultCapture
+	if rec, ok := diagnostics.RecorderFromContext(ctx); ok {
+		// Collect the rows the driver returns, not just the statement that asked for
+		// them. Run is the only place that can: below it the rows are consumed by the
+		// conversion, above it they are already frames. Without them a capture states
+		// what was asked and the returned frames state what arrived, with no independent
+		// account of what the database sent -- so "the database returned the wrong rows"
+		// would stay indistinguishable from "the plugin mangled correct rows", which is
+		// the comparison this capture exists to make possible.
+		results = diagnostics.NewResultCapture()
+		ctx = diagnostics.WithResultCapture(ctx, results)
+		// Deferred so that one Interaction covers every return path, including
+		// the error paths, and so Duration includes converting rows to frames.
+		// Registered first, so it runs after Run's other deferred work.
+		defer func() { q.recordInteraction(rec, start, query, args, frames, results, err) }()
+	}
 	rows, err := q.DB.QueryContext(ctx, query.RawSQL, args...)
 	if err != nil {
 		var errWithSource backend.ErrorWithSource
@@ -163,7 +192,7 @@ func (q *DBQuery) convertRowsToFrames(ctx context.Context, rows *sql.Rows, query
 		q.metrics.CollectDuration(source, status, time.Since(start).Seconds())
 	}()
 
-	res, err := getFrames(rows, q.rowLimit, q.rowCapacityHint, q.converters, q.fillMode, query)
+	res, err := getFrames(ctx, rows, q.rowLimit, q.rowCapacityHint, q.converters, q.fillMode, query)
 	if err != nil {
 		status = StatusError
 
@@ -220,7 +249,11 @@ func (q *DBQuery) observeResponseSize(ctx context.Context, frames data.Frames, r
 // If capacity > 0, the Frame's Fields are presized via
 // sqlutil.FrameFromRowsWithCapacity to avoid per-column slice growth during
 // scanning. Passing 0 preserves the historical FrameFromRows behavior.
-func getFrames(rows *sql.Rows, limit int64, capacity int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+//
+// ctx is threaded through to row scanning so that, when diagnostics capture is
+// active, the rows the driver returned are recorded before any Converter runs
+// (see sqlutil.FrameFromRowsWithContext). With capture off it changes nothing.
+func getFrames(ctx context.Context, rows *sql.Rows, limit int64, capacity int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Validate rows before processing to prevent panics
 	if err := validateRows(rows); err != nil {
 		backend.Logger.Error("Invalid SQL rows", "error", err.Error())
@@ -235,9 +268,9 @@ func getFrames(rows *sql.Rows, limit int64, capacity int64, converters []sqlutil
 		// RowCapacityHint is int64 (row-count domain, like rowLimit); SetRowCapacity
 		// takes int. Safe to narrow: on 64-bit int == int64, and an overflow on 32-bit
 		// trips the SDK's `capacity > 0` guard and just skips presizing.
-		frame, err = sqlutil.FrameFromRowsWithCapacity(rows, limit, int(capacity), converters...)
+		frame, err = sqlutil.FrameFromRowsWithContext(ctx, rows, limit, int(capacity), converters...)
 	} else {
-		frame, err = sqlutil.FrameFromRows(rows, limit, converters...)
+		frame, err = sqlutil.FrameFromRowsWithContext(ctx, rows, limit, 0, converters...)
 	}
 	if err != nil {
 		return nil, err
