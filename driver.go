@@ -30,6 +30,15 @@ type DriverSettings struct {
 	// patterns, statements with a hard LIMIT) should set this to avoid
 	// per-column slice growth during FrameFromRows.
 	RowCapacityHint int64
+	// LongToWideCellLimit bounds the wide frame the time-series format builds
+	// from a long result. The projected size is distinct timestamps x
+	// (1 + distinct label combinations x value fields), in cells. When the
+	// projection exceeds the limit, the query fails with a downstream error
+	// before any wide-frame memory is allocated: high-cardinality results
+	// otherwise expand to rows x series cells, mostly null, and can exhaust
+	// the plugin process's memory. 0 (the default) applies a limit of
+	// 10,000,000 cells. A negative value disables the guard.
+	LongToWideCellLimit int64
 	// ResponseThresholds configures when a query response is considered
 	// "large" enough to emit a structured warn log. A zero value on
 	// either field disables that dimension. At the sqlds layer bytes
