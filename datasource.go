@@ -102,6 +102,9 @@ type SQLDatasource struct {
 	// at init and passed into every DBQuery so FrameFromRows can presize
 	// its Fields. Zero disables presizing.
 	rowCapacityHint int64
+	// longToWideCellLimit mirrors DriverSettings.LongToWideCellLimit, resolved
+	// per query inside getFrames (0 = default, negative = disabled).
+	longToWideCellLimit int64
 	// PreCheckHealth (optional). Performs custom health check before the Connect method
 	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
 	// PostCheckHealth (optional).Performs custom health check after the Connect method
@@ -153,6 +156,7 @@ func (ds *SQLDatasource) NewDatasource(ctx context.Context, settings backend.Dat
 
 	ds.rowLimit = ds.newRowLimit(ctx, conn)
 	ds.rowCapacityHint = conn.driverSettings.RowCapacityHint
+	ds.longToWideCellLimit = conn.driverSettings.LongToWideCellLimit
 
 	return ds, nil
 }
@@ -312,6 +316,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 	//    if the query fails. NOTE: this does not include some errors like "ErrNoRows"
 	dbQuery := NewQuery(dbConn.db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit).
 		WithRowCapacityHint(ds.rowCapacityHint).
+		WithLongToWideCellLimit(ds.longToWideCellLimit).
 		WithResponseThresholds(ds.DriverSettings().ResponseThresholds)
 	res, err := dbQuery.Run(ctx, q, queryErrorMutator, args...)
 	if err == nil {
@@ -340,6 +345,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 
 				dbQuery := NewQuery(db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit).
 					WithRowCapacityHint(ds.rowCapacityHint).
+					WithLongToWideCellLimit(ds.longToWideCellLimit).
 					WithResponseThresholds(ds.DriverSettings().ResponseThresholds)
 				res, err = dbQuery.Run(ctx, q, queryErrorMutator, args...)
 				if err == nil {
@@ -371,7 +377,8 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 			}
 
 			dbQuery := NewQuery(db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit).
-				WithRowCapacityHint(ds.rowCapacityHint)
+				WithRowCapacityHint(ds.rowCapacityHint).
+				WithLongToWideCellLimit(ds.longToWideCellLimit)
 			res, err = dbQuery.Run(ctx, q, queryErrorMutator, args...)
 			if err == nil {
 				return res, err
