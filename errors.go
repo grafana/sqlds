@@ -21,6 +21,10 @@ var (
 	ErrorRowValidation = errors.New("SQL rows validation failed")
 	// ErrorConnectionClosed is returned when the database connection is unexpectedly closed
 	ErrorConnectionClosed = errors.New("database connection closed")
+	// ErrorWideFrameTooLarge is returned when converting a long result to the
+	// wide time-series format would allocate more cells than the configured
+	// LongToWideCellLimit
+	ErrorWideFrameTooLarge = errors.New("time series result too large to convert to wide format")
 )
 
 func ErrorSource(err error) backend.ErrorSource {
