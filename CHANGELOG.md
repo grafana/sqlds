@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.4.0]
+
+### Changed
+
+- The long-to-wide pivot in the time-series format is now guarded by a projected-cell budget, on by default: a long result whose wide projection exceeds `DriverSettings.LongToWideCellLimit` (default 10,000,000 cells) fails with a downstream error before any wide-frame memory is allocated, instead of expanding to rows x series cells and exhausting the plugin process's memory. Queries that previously returned very large wide frames now return an error. Set `LongToWideCellLimit: -1` to restore the old behaviour by @adamyeats in #307
+
 ## [5.3.1]
 
 ### Fixed
