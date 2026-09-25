@@ -86,10 +86,6 @@ func queryLongResult(t *testing.T, name string, timestamps, series int) *sql.Row
 	return rows
 }
 
-// TestGetFramesLongToWideCellLimit exercises the guard through getFrames
-// with real sql.Rows: the time-series format must reject an over-budget long
-// result with a downstream ErrorWideFrameTooLarge before pivoting, and a
-// negative limit must disable the guard.
 func TestGetFramesLongToWideCellLimit(t *testing.T) {
 	query := &Query{RawSQL: "select long result", Format: FormatOptionTimeSeries}
 
@@ -98,7 +94,7 @@ func TestGetFramesLongToWideCellLimit(t *testing.T) {
 		rows := queryLongResult(t, "sqlds-longtowide-over", 4, 3)
 		_, err := getFrames(rows, -1, 0, 15, nil, nil, query)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrorWideFrameTooLarge))
+		assert.True(t, errors.Is(err, data.ErrorWideFrameTooLarge))
 		assert.True(t, backend.IsDownstreamError(err))
 	})
 
