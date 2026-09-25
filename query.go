@@ -64,10 +64,7 @@ type DBQuery struct {
 	converters      []sqlutil.Converter
 	rowLimit        int64
 	rowCapacityHint int64
-	// longToWideCellLimit carries DriverSettings.LongToWideCellLimit
-	// unresolved: 0 means default, negative means disabled. getFrames
-	// resolves it so DBQuery values built directly via NewQuery get the
-	// same default as those built by SQLDatasource.
+	// longToWideCellLimit stays unresolved so DBQuery values built via NewQuery share the default.
 	longToWideCellLimit int64
 	thresholds          responseobs.Thresholds
 }
@@ -93,10 +90,9 @@ func (q *DBQuery) WithRowCapacityHint(hint int64) *DBQuery {
 	return q
 }
 
-// WithLongToWideCellLimit bounds the wide frame the time-series format
-// builds from a long result, in projected cells. 0 (the default) applies
-// the package default of 10,000,000 cells, a negative value disables the
-// guard. Returns the receiver to allow chaining after NewQuery.
+// WithLongToWideCellLimit caps the wide frame the time-series format builds
+// from a long result, in cells. 0 applies the default of 10,000,000 cells and
+// a negative value disables the limit. Returns the receiver to allow chaining.
 func (q *DBQuery) WithLongToWideCellLimit(limit int64) *DBQuery {
 	q.longToWideCellLimit = limit
 	return q
@@ -303,11 +299,11 @@ func getFrames(rows *sql.Rows, limit int64, capacity int64, wideCellLimit int64,
 			return nil, ErrorNoResults
 		}
 
-		if tsSchema := frame.TimeSeriesSchema(); tsSchema.Type == data.TimeSeriesTypeLong {
-			if err := checkLongToWideCellBudget(frame, tsSchema, resolveLongToWideCellLimit(wideCellLimit)); err != nil {
-				return nil, err
+		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
+			frame, err = data.LongToWideWithLimit(frame, fillMode, resolveLongToWideCellLimit(wideCellLimit))
+			if errors.Is(err, data.ErrorWideFrameTooLarge) {
+				return nil, backend.DownstreamError(err)
 			}
-			frame, err = data.LongToWide(frame, fillMode)
 			if err != nil {
 				return nil, err
 			}

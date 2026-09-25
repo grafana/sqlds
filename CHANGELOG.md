@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The time-series format caps the wide frame built by the long-to-wide pivot at `DriverSettings.LongToWideCellLimit` cells (default 10,000,000). A long result that pivots past the limit fails with a downstream `data.ErrorWideFrameTooLarge` instead of expanding to rows x series cells and exhausting the plugin process's memory. Queries that previously returned very large wide frames now return an error. Set `LongToWideCellLimit: -1` to restore the old behaviour by @adamyeats in #307
+
 ## [5.4.0]
 
 ### Added
@@ -15,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `QueryData` reads the forwarded HTTP headers after `MutateQueryData`. A driver's mutator can add or remove headers before sqlds forwards them to `Connect` and keys pools on them, by @adamyeats in #313
-- The long-to-wide pivot in the time-series format is now guarded by a projected-cell budget, on by default: a long result whose wide projection exceeds `DriverSettings.LongToWideCellLimit` (default 10,000,000 cells) fails with a downstream error before any wide-frame memory is allocated, instead of expanding to rows x series cells and exhausting the plugin process's memory. Queries that previously returned very large wide frames now return an error. Set `LongToWideCellLimit: -1` to restore the old behaviour by @adamyeats in #307
 
 ### Fixed
 
