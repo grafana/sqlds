@@ -101,9 +101,7 @@ type SQLDatasource struct {
 	// rowCapacityHint mirrors DriverSettings.RowCapacityHint, resolved once
 	// at init and passed into every DBQuery so FrameFromRows can presize
 	// its Fields. Zero disables presizing.
-	rowCapacityHint int64
-	// longToWideCellLimit mirrors DriverSettings.LongToWideCellLimit, resolved
-	// per query inside getFrames (0 = default, negative = disabled).
+	rowCapacityHint     int64
 	longToWideCellLimit int64
 	// PreCheckHealth (optional). Performs custom health check before the Connect method
 	PreCheckHealth func(ctx context.Context, req *backend.CheckHealthRequest) *backend.CheckHealthResult
