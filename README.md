@@ -82,3 +82,30 @@ plugins capture their own configuration (TTL, size cap, dependencies) in
 the closure. A nil factory falls back to `NewSyncMapCache()`, which is
 behaviourally equivalent to the pre-extension `sync.Map`-backed storage
 (no eviction, no background goroutines).
+
+### Connection pool limits
+
+Every `*sql.DB` the `Connector` caches gets its pool bounded when it is
+opened, on the bootstrap connect, the deferred default connect, `Reconnect`
+and the per-connection-args path alike. Each of the three knobs is resolved
+in this order:
+
+1. `DriverSettings.MaxOpenConns`, `MaxIdleConns` or `ConnMaxLifetime`, when
+   the driver sets it to a non-zero value. This is where a plugin exposes a
+   per-data-source override read from its `jsonData`.
+2. The Grafana `[sql_datasources]` defaults (`max_open_conns_default`,
+   `max_idle_conns_default`, `max_conn_lifetime_default`), which Grafana
+   injects into the plugin environment and the SDK exposes through
+   `GrafanaCfg.SQL()`.
+3. Otherwise the knob is left at its `database/sql` default.
+
+A driver that bounds the pool itself inside `Connect` (a `SetMaxOpenConns`
+call with `n > 0`) is left alone entirely, because `database/sql` gives no
+way to tell which of the other knobs it also set. A driver that sets only
+idle or lifetime there, or passes `n <= 0`, is treated as unbounded and
+receives the resolved values for all three knobs. Move such settings to
+`DriverSettings` instead.
+
+Negative `DriverSettings` values reach `database/sql` unchanged: no limit
+for `MaxOpenConns`, no idle connections kept for `MaxIdleConns`, and no
+age limit for `ConnMaxLifetime`.

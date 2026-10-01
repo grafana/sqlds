@@ -36,6 +36,24 @@ type DriverSettings struct {
 	// cannot be measured cheaply, so only the Rows threshold takes
 	// effect for sqlds-emitted observations.
 	ResponseThresholds responseobs.Thresholds
+	// MaxOpenConns bounds the pool of every *sql.DB the Connector caches for
+	// this data source. Zero means "not set": sqlds then falls back to the
+	// Grafana [sql_datasources] default that the SDK exposes through
+	// GrafanaCfg.SQL(), and leaves the knob untouched when that is absent too.
+	// A negative value reaches database/sql unchanged and means no limit.
+	// A driver that bounds the pool itself inside Connect with
+	// db.SetMaxOpenConns(n > 0) is left alone entirely. A driver that sets
+	// only idle or lifetime there, or passes n <= 0, is treated as unbounded
+	// and receives the resolved values for all three knobs.
+	MaxOpenConns int
+	// MaxIdleConns follows the same precedence as MaxOpenConns. A negative
+	// value reaches database/sql unchanged and keeps no idle connections;
+	// database/sql has no "unlimited idle" setting.
+	MaxIdleConns int
+	// ConnMaxLifetime follows the same precedence as MaxOpenConns. A negative
+	// value reaches database/sql unchanged and never closes a connection for
+	// its age.
+	ConnMaxLifetime time.Duration
 }
 
 // Driver is a simple interface that defines how to connect to a backend SQL datasource

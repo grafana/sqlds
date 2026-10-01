@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `DriverSettings.MaxOpenConns`, `MaxIdleConns` and `ConnMaxLifetime` let a driver bound the pool of every `*sql.DB` sqlds caches for a data source; zero falls back to the Grafana `[sql_datasources]` defaults by @adamyeats in #311
+
+### Changed
+
+- The `Connector` now applies the Grafana `[sql_datasources]` defaults (100 open, 100 idle, 4 hour lifetime when unset) to every `*sql.DB` it opens, unless the driver sets `DriverSettings` pool fields or bounds the pool itself inside `Connect`. Pools were previously unbounded for every driver except ClickHouse by @adamyeats in #311
+
 ## [5.3.1]
 
 ### Fixed

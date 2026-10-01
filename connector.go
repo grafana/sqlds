@@ -3,6 +3,7 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/config"
 )
 
 type Connector struct {
@@ -61,7 +63,7 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 		conn.cache = NewSyncMapCache()
 	}
 
-	db, err := driver.Connect(ctx, settings, nil)
+	db, err := conn.openDB(ctx, settings, nil)
 	if err != nil {
 		backend.Logger.Warn("bootstrap connect deferred; CallResource routes will still register", "error", err)
 		conn.storeDBConnection(conn.defaultKey, CachedConnection{db: nil, settings: settings})
@@ -108,7 +110,7 @@ func (c *Connector) ensureDefaultDB(ctx context.Context) (CachedConnection, erro
 		return dbConn, nil
 	}
 
-	db, err := c.driver.Connect(ctx, dbConn.settings, nil)
+	db, err := c.openDB(ctx, dbConn.settings, nil)
 	if err != nil {
 		return CachedConnection{}, backend.DownstreamError(err)
 	}
@@ -176,7 +178,7 @@ func (c *Connector) ping(ctx context.Context, conn CachedConnection) error {
 }
 
 func (c *Connector) Reconnect(ctx context.Context, dbConn CachedConnection, q *Query, cacheKey string) (*sql.DB, error) {
-	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
+	db, err := c.openDB(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		return nil, backend.DownstreamError(err)
 	}
@@ -189,6 +191,64 @@ func (c *Connector) Reconnect(ctx context.Context, dbConn CachedConnection, q *Q
 
 	c.storeDBConnection(cacheKey, CachedConnection{db, dbConn.settings})
 	return db, nil
+}
+
+// openDB is the single path through which the Connector calls
+// driver.Connect, so every cached *sql.DB gets the same pool bounds.
+func (c *Connector) openDB(ctx context.Context, settings backend.DataSourceInstanceSettings, args json.RawMessage) (*sql.DB, error) {
+	db, err := c.driver.Connect(ctx, settings, args)
+	if err != nil {
+		return nil, err
+	}
+	c.applyPoolSettings(ctx, db)
+	return db, nil
+}
+
+// applyPoolSettings bounds db's connection pool. Per knob the precedence is
+// DriverSettings, then the Grafana [sql_datasources] defaults from
+// GrafanaCfg.SQL(), else the knob is left at its database/sql default. A
+// driver that already bounded the pool inside Connect is left alone, since
+// database/sql exposes no way to tell which of the other knobs it also set;
+// one that set only idle or lifetime there is treated as unbounded. The nil
+// guard covers drivers that return (nil, nil), which the cache treats as a
+// deferred connection.
+func (c *Connector) applyPoolSettings(ctx context.Context, db *sql.DB) {
+	if db == nil || db.Stats().MaxOpenConnections > 0 {
+		return
+	}
+	defaults, ok := grafanaSQLDefaults(ctx)
+	if n, set := pick(c.driverSettings.MaxOpenConns, defaults.DefaultMaxOpenConns, ok); set {
+		db.SetMaxOpenConns(n)
+	}
+	if n, set := pick(c.driverSettings.MaxIdleConns, defaults.DefaultMaxIdleConns, ok); set {
+		db.SetMaxIdleConns(n)
+	}
+	lifetime := time.Duration(defaults.DefaultMaxConnLifetimeSeconds) * time.Second
+	if d, set := pick(c.driverSettings.ConnMaxLifetime, lifetime, ok); set {
+		db.SetConnMaxLifetime(d)
+	}
+}
+
+// grafanaSQLDefaults reads the [sql_datasources] defaults Grafana injects
+// into the plugin environment. SQL() fails when they are absent, which is
+// the case on Grafana versions that predate the injection and on a bare
+// context.
+func grafanaSQLDefaults(ctx context.Context) (config.SQLConfig, bool) {
+	sqlCfg, err := config.GrafanaConfigFromContext(ctx).SQL()
+	if err != nil {
+		backend.Logger.Debug("grafana sql pool defaults unavailable", "error", err)
+		return config.SQLConfig{}, false
+	}
+	return sqlCfg, true
+}
+
+// pick resolves one pool knob: a non-zero driver value wins, otherwise the
+// Grafana default applies when one is available.
+func pick[T ~int | ~int64](driver, grafana T, haveGrafana bool) (T, bool) {
+	if driver != 0 {
+		return driver, true
+	}
+	return grafana, haveGrafana
 }
 
 // connCache returns the Connector's ConnectionCache, lazily installing the
@@ -238,7 +298,7 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 		return key, cachedConn, nil
 	}
 
-	db, err := c.driver.Connect(ctx, dbConn.settings, q.ConnectionArgs)
+	db, err := c.openDB(ctx, dbConn.settings, q.ConnectionArgs)
 	if err != nil {
 		backend.Logger.Debug("connect error " + err.Error())
 		return "", CachedConnection{}, backend.DownstreamError(err)
