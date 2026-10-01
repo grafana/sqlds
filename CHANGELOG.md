@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The `Connector` now applies the Grafana `[sql_datasources]` defaults (100 open, 100 idle, 4 hour lifetime when unset) to every `*sql.DB` it opens, unless the driver sets `DriverSettings` pool fields or bounds the pool itself inside `Connect`. Pools were previously unbounded for every driver except ClickHouse by @adamyeats in #311
+- The time-series format caps the wide frame built by the long-to-wide pivot at `DriverSettings.LongToWideCellLimit` cells (default 10,000,000). A long result that pivots past the limit fails with a downstream `data.ErrorWideFrameTooLarge` instead of expanding to rows x series cells and exhausting the plugin process's memory. Queries that previously returned very large wide frames now return an error. Set `LongToWideCellLimit: -1` to restore the old behaviour by @adamyeats in #307
 
 ## [5.3.1]
 
