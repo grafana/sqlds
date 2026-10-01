@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "go",
+  "include-v-in-tag": true,
+  "include-component-in-tag": false,
+  "bootstrap-sha": "52476c94290c0b067f44ac4fb3fb2dee37ec3a05",
+  "changelog-sections": [
+    { "type": "feat", "section": "🎉 Features" },
+    { "type": "fix", "section": "🐛 Bug Fixes" },
+    { "type": "perf", "section": "⚡ Performance Improvements" },
+    { "type": "refactor", "section": "♻️ Code Refactoring" },
+    { "type": "docs", "section": "📝 Documentation" },
+    { "type": "test", "section": "✅ Tests" },
+    { "type": "build", "section": "🏗️ Builds" },
+    { "type": "ci", "section": "🤖 Continuous Integration" },
+    { "type": "revert", "section": "⏪ Reverts" },
+    { "type": "chore", "section": "🔧 Chores", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "package-name": "sqlds"
+    }
+  }
+}
