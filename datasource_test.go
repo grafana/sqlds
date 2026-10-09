@@ -73,6 +73,35 @@ func Test_query_apply_headers(t *testing.T) {
 	assert.Contains(t, string(message), "bar")
 }
 
+type headerShapingDS struct {
+	test.TestDS
+}
+
+func (d headerShapingDS) MutateQueryData(ctx context.Context, req *backend.QueryDataRequest) (context.Context, *backend.QueryDataRequest) {
+	req.DeleteHTTPHeader("X-Query-Group-Id")
+	req.SetHTTPHeader("X-Grafana-User", "alice")
+	return ctx, req
+}
+
+func Test_query_forwards_headers_shaped_by_mutator(t *testing.T) {
+	var message []byte
+	opts := test.DriverOpts{OnConnect: func(msg []byte) { message = msg }}
+	cfg := `{ "timeout": 0, "retries": 0, "forwardHeaders": true }`
+	driver, _ := test.NewDriver("headers-shaped", test.Data{}, nil, opts, nil)
+	ds := sqlds.NewDatasource(headerShapingDS{driver})
+	ds.EnableMultipleConnections = true
+	req, settings := setupQueryRequest("headers-shaped", cfg)
+	_, err := ds.NewDatasource(context.Background(), settings)
+	assert.Nil(t, err)
+	req.SetHTTPHeader("X-Query-Group-Id", "run-1")
+
+	_, err = ds.QueryData(context.Background(), req)
+	assert.Nil(t, err)
+
+	assert.Contains(t, string(message), "alice")
+	assert.NotContains(t, string(message), "run-1")
+}
+
 func Test_check_health_with_headers(t *testing.T) {
 	var message json.RawMessage
 	onConnect := func(msg []byte) {

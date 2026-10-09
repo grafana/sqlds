@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `NewIdleEvictingCache`: a `ConnectionCache` that closes a pool once no query has used it for a set idle time. Drivers that open one pool per forwarded header set install it through `ConnectionCacheFactory`, by @adamyeats
 - `DriverSettings.MaxOpenConns`, `MaxIdleConns` and `ConnMaxLifetime` let a driver bound the pool of every `*sql.DB` sqlds caches for a data source; zero falls back to the Grafana `[sql_datasources]` defaults by @adamyeats in #311
 
 ### Changed
 
+- `QueryData` reads the forwarded HTTP headers after `MutateQueryData`. A driver's mutator can add or remove headers before sqlds forwards them to `Connect` and keys pools on them, by @adamyeats
+
+### Fixed
+
+- `GetConnectionFromQuery` closes the pool it opened when a concurrent query stored one for the same key first. Both pools were kept before, and the unreachable one leaked a goroutine and its connections, by @adamyeats
 - The `Connector` now applies the Grafana `[sql_datasources]` defaults (100 open, 100 idle, 4 hour lifetime when unset) to every `*sql.DB` it opens, unless the driver sets `DriverSettings` pool fields or bounds the pool itself inside `Connect`. Pools were previously unbounded for every driver except ClickHouse by @adamyeats in #311
 
 ## [5.3.1]
