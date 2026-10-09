@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -112,5 +113,71 @@ func TestExistingNewConnector_CallSitesUnaffected(t *testing.T) {
 	}
 	if conn.cache == nil {
 		t.Fatal("default cache expected")
+	}
+}
+
+// barrierDriver holds every keyed Connect until n callers have arrived, so a
+// test can force concurrent cache misses on one key.
+type barrierDriver struct {
+	noopDriver
+	arrive *sync.WaitGroup
+	mu     sync.Mutex
+	opened []*sql.DB
+}
+
+func (d *barrierDriver) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, args json.RawMessage) (*sql.DB, error) {
+	db := newLiveTestDB()
+	if len(args) == 0 {
+		return db, nil
+	}
+	d.mu.Lock()
+	d.opened = append(d.opened, db)
+	d.mu.Unlock()
+	d.arrive.Done()
+	d.arrive.Wait()
+	return db, nil
+}
+
+func TestConnector_ConcurrentMissesOnOneKeyKeepOnePool(t *testing.T) {
+	const n = 3
+	ctx := context.Background()
+	driver := &barrierDriver{arrive: &sync.WaitGroup{}}
+	driver.arrive.Add(n)
+	conn, err := NewConnector(ctx, driver, backend.DataSourceInstanceSettings{UID: "uid"}, true)
+	if err != nil {
+		t.Fatalf("NewConnector: %v", err)
+	}
+	t.Cleanup(conn.Dispose)
+	q := &Query{ConnectionArgs: json.RawMessage(`{"grafana-http-headers":{"X-Grafana-User":["alice"]}}`)}
+
+	results := make([]*sql.DB, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, c, err := conn.GetConnectionFromQuery(ctx, q)
+			if err != nil {
+				t.Errorf("GetConnectionFromQuery: %v", err)
+				return
+			}
+			results[i] = c.DB()
+		}(i)
+	}
+	wg.Wait()
+
+	open := 0
+	for _, db := range driver.opened {
+		if !dbClosed(db) {
+			open++
+		}
+	}
+	if len(driver.opened) != n || open != 1 {
+		t.Fatalf("opened %d keyed pools with %d still open, want %d opened and exactly 1 open", len(driver.opened), open, n)
+	}
+	for i, db := range results {
+		if db != results[0] {
+			t.Fatalf("caller %d received a different pool from caller 0", i)
+		}
 	}
 }

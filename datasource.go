@@ -181,8 +181,6 @@ func (ds *SQLDatasource) Dispose() {
 
 // QueryData creates the Responses list and executes each query
 func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
-	headers := req.GetHTTPHeaders()
-
 	var (
 		response = NewResponse(backend.NewQueryDataResponse())
 		wg       = sync.WaitGroup{}
@@ -193,6 +191,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	if ds.queryDataMutator != nil {
 		ctx, req = ds.queryDataMutator.MutateQueryData(ctx, req)
 	}
+	headers := req.GetHTTPHeaders()
 
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
