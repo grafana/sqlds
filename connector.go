@@ -281,6 +281,23 @@ func (c *Connector) storeDBConnection(ctx context.Context, key string, dbConn Ca
 	c.connCache().Store(key, dbConn)
 }
 
+// storeIfAbsent caches dbConn unless a concurrent miss cached key first, in which case it closes
+// dbConn and returns the cached one. After Dispose it closes dbConn when ctx is done, like storeDBConnection.
+func (c *Connector) storeIfAbsent(ctx context.Context, key string, dbConn CachedConnection) CachedConnection {
+	c.storeMu.Lock()
+	defer c.storeMu.Unlock()
+	if c.disposed {
+		context.AfterFunc(ctx, func() { _ = dbConn.Close() })
+		return dbConn
+	}
+	if cached, ok := c.connCache().Load(key); ok {
+		_ = dbConn.Close()
+		return cached
+	}
+	c.connCache().Store(key, dbConn)
+	return dbConn
+}
+
 // Dispose is called when an existing SQLDatasource needs to be replaced
 func (c *Connector) Dispose() {
 	c.storeMu.Lock()
@@ -317,11 +334,8 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 		return "", CachedConnection{}, backend.DownstreamError(err)
 	}
 	backend.Logger.Debug("new connection(multiple) created")
-	// Assign this connection in the cache
-	dbConn = CachedConnection{db, dbConn.settings}
-	c.storeDBConnection(ctx, key, dbConn)
 
-	return key, dbConn, nil
+	return key, c.storeIfAbsent(ctx, key, CachedConnection{db, dbConn.settings}), nil
 }
 
 func shouldRetry(retryOn []string, err string) bool {

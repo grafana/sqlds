@@ -78,7 +78,8 @@ type Connection interface {
 
 // QueryDataMutator  is an additional interface that could be implemented by driver.
 // This adds ability to the driver to optionally mutate the query before it's run
-// with the QueryDataRequest.
+// with the QueryDataRequest. Header changes made here shape the set sqlds
+// forwards to Connect and keys pools on.
 type QueryDataMutator interface {
 	MutateQueryData(ctx context.Context, req *backend.QueryDataRequest) (context.Context, *backend.QueryDataRequest)
 }
