@@ -25,6 +25,8 @@ type Connector struct {
 	defaultKey string
 	// defaultDBMu serializes opening a deferred default connection.
 	defaultDBMu sync.Mutex
+	// keyedMu serializes publishing a keyed connection into the cache.
+	keyedMu sync.Mutex
 	// Enabling multiple connections may cause that concurrent connection limits
 	// are hit. The datasource enabling this should make sure connections are cached
 	// if necessary.
@@ -303,8 +305,16 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 		backend.Logger.Debug("connect error " + err.Error())
 		return "", CachedConnection{}, backend.DownstreamError(err)
 	}
+
+	// A concurrent miss on the same key may have stored its pool first; keep
+	// that one and close this one so no unreachable pool stays open.
+	c.keyedMu.Lock()
+	defer c.keyedMu.Unlock()
+	if cachedConn, ok := c.getDBConnection(key); ok {
+		_ = db.Close()
+		return key, cachedConn, nil
+	}
 	backend.Logger.Debug("new connection(multiple) created")
-	// Assign this connection in the cache
 	dbConn = CachedConnection{db, dbConn.settings}
 	c.storeDBConnection(key, dbConn)
 
