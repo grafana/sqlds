@@ -33,7 +33,7 @@ func newBenchDS(driver Driver) *SQLDatasource {
 	ds.connector.UID = "bench-uid"
 	ds.connector.driverSettings = DriverSettings{}
 	ds.connector.defaultKey = defaultKey(ds.connector.UID)
-	ds.connector.storeDBConnection(ds.connector.defaultKey, CachedConnection{
+	ds.connector.storeDBConnection(context.Background(), ds.connector.defaultKey, CachedConnection{
 		db:       nil,
 		settings: backend.DataSourceInstanceSettings{UID: "bench-uid", Name: "bench"},
 	})
