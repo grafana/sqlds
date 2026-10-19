@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A `*sql.DB` that `Reconnect` or `GetConnectionFromQuery` opens after the `Connector` is disposed is no longer cached, and is closed when the request's context ends. Nothing closed it before, so each such retry leaked a pool by @adamyeats
+- A `*sql.DB` that `Reconnect` or `GetConnectionFromQuery` opens after the `Connector` is disposed is no longer cached, and is closed when the request's context ends. Nothing closed it before, so each such retry leaked a pool by @adamyeats in #315
 
 ## [5.3.1]
 
