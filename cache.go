@@ -6,10 +6,10 @@ import (
 
 // ConnectionCache is the per-Connector cache contract for the
 // *sql.DB instances keyed by (datasource UID + ConnectionArgs hash) that
-// Connector manages. Plugins install a custom implementation (e.g. one with
-// TTL eviction) via SQLDatasource.ConnectionCacheFactory. The cache traffics
-// in the exported CachedConnection value type, so a plugin's TTL cache can be as
-// simple as a guarded map[string]CachedConnection.
+// Connector manages. Plugins install a custom implementation (for example
+// NewIdleEvictingCache) via SQLDatasource.ConnectionCacheFactory. The cache
+// traffics in the exported CachedConnection value type, so a plugin's TTL
+// cache can be as simple as a guarded map[string]CachedConnection.
 //
 // Implementations MUST be safe for concurrent use from any number of
 // goroutines.
