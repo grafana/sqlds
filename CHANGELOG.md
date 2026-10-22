@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `Connector` now applies the Grafana `[sql_datasources]` defaults (100 open, 100 idle, 4 hour lifetime when unset) to every `*sql.DB` it opens, unless the driver sets `DriverSettings` pool fields or bounds the pool itself inside `Connect`. Pools were previously unbounded for every driver except ClickHouse by @adamyeats in #311
 
+### Fixed
+
+- A `*sql.DB` that `Reconnect` or `GetConnectionFromQuery` opens after the `Connector` is disposed is no longer cached, and is closed when the request's context ends. Nothing closed it before, so each such retry leaked a pool by @adamyeats in #315
+
 ## [5.3.1]
 
 ### Fixed

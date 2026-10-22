@@ -25,6 +25,9 @@ type Connector struct {
 	defaultKey string
 	// defaultDBMu serializes opening a deferred default connection.
 	defaultDBMu sync.Mutex
+	// storeMu orders cache stores against Dispose, so nothing is cached after Dispose empties the cache.
+	storeMu  sync.Mutex
+	disposed bool
 	// Enabling multiple connections may cause that concurrent connection limits
 	// are hit. The datasource enabling this should make sure connections are cached
 	// if necessary.
@@ -66,11 +69,11 @@ func NewConnector(ctx context.Context, driver Driver, settings backend.DataSourc
 	db, err := conn.openDB(ctx, settings, nil)
 	if err != nil {
 		backend.Logger.Warn("bootstrap connect deferred; CallResource routes will still register", "error", err)
-		conn.storeDBConnection(conn.defaultKey, CachedConnection{db: nil, settings: settings})
+		conn.storeDBConnection(ctx, conn.defaultKey, CachedConnection{db: nil, settings: settings})
 		return conn, nil
 	}
 
-	conn.storeDBConnection(conn.defaultKey, CachedConnection{db, settings})
+	conn.storeDBConnection(ctx, conn.defaultKey, CachedConnection{db, settings})
 	return conn, nil
 }
 
@@ -115,7 +118,7 @@ func (c *Connector) ensureDefaultDB(ctx context.Context) (CachedConnection, erro
 		return CachedConnection{}, backend.DownstreamError(err)
 	}
 	dbConn = CachedConnection{db: db, settings: dbConn.settings}
-	c.storeDBConnection(c.defaultKey, dbConn)
+	c.storeDBConnection(ctx, c.defaultKey, dbConn)
 	return dbConn, nil
 }
 
@@ -189,7 +192,7 @@ func (c *Connector) Reconnect(ctx context.Context, dbConn CachedConnection, q *Q
 		}
 	}
 
-	c.storeDBConnection(cacheKey, CachedConnection{db, dbConn.settings})
+	c.storeDBConnection(ctx, cacheKey, CachedConnection{db, dbConn.settings})
 	return db, nil
 }
 
@@ -267,12 +270,22 @@ func (c *Connector) getDBConnection(key string) (CachedConnection, bool) {
 	return c.connCache().Load(key)
 }
 
-func (c *Connector) storeDBConnection(key string, dbConn CachedConnection) {
+// After Dispose nothing would close a cached connection, so storeDBConnection closes it when ctx is done instead.
+func (c *Connector) storeDBConnection(ctx context.Context, key string, dbConn CachedConnection) {
+	c.storeMu.Lock()
+	defer c.storeMu.Unlock()
+	if c.disposed {
+		context.AfterFunc(ctx, func() { _ = dbConn.Close() })
+		return
+	}
 	c.connCache().Store(key, dbConn)
 }
 
 // Dispose is called when an existing SQLDatasource needs to be replaced
 func (c *Connector) Dispose() {
+	c.storeMu.Lock()
+	c.disposed = true
+	c.storeMu.Unlock()
 	c.connCache().Dispose()
 }
 
@@ -306,7 +319,7 @@ func (c *Connector) GetConnectionFromQuery(ctx context.Context, q *Query) (strin
 	backend.Logger.Debug("new connection(multiple) created")
 	// Assign this connection in the cache
 	dbConn = CachedConnection{db, dbConn.settings}
-	c.storeDBConnection(key, dbConn)
+	c.storeDBConnection(ctx, key, dbConn)
 
 	return key, dbConn, nil
 }
