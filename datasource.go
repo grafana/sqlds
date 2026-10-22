@@ -332,6 +332,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				if err != nil {
 					return nil, backend.DownstreamError(err)
 				}
+				dbConn = CachedConnection{db: db, settings: dbConn.settings}
 
 				if settings.Pause > 0 {
 					time.Sleep(time.Duration(settings.Pause * int(time.Second)))
@@ -368,6 +369,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 			if err != nil {
 				continue
 			}
+			dbConn = CachedConnection{db: db, settings: dbConn.settings}
 
 			dbQuery := NewQuery(db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit).
 				WithRowCapacityHint(ds.rowCapacityHint)
