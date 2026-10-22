@@ -4,10 +4,6 @@ All notable changes to this project are documented in this file.
 
 From 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Older entries follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Fixed
-
-- A `*sql.DB` that `Reconnect` or `GetConnectionFromQuery` opens after the `Connector` is disposed is no longer cached, and is closed when the request's context ends. Nothing closed it before, so each such retry leaked a pool by @adamyeats in #315
-
 ## [5.3.1]
 
 ### Fixed
