@@ -28,6 +28,44 @@ func datasourceFactory(ctx context.Context, s backend.DataSourceInstanceSettings
 
 The `sqlds` package formerly defined a set of default macros, but those have been migrated to `grafana-plugin-sdk-go`: see [the code](https://github.com/grafana/grafana-plugin-sdk-go/blob/main/data/sqlutil/macros.go) for details.
 
+### Converters
+
+`Driver.Converters()` returns the `sqlutil.Converter` list used to map SQL
+column types to dataframe field types. `sqlds` passes them straight to
+`sqlutil.FrameFromRows`, which picks the first converter in slice order whose
+matching criteria fit the column. A converter matches when any of these apply:
+
+- `InputColumnName`: exact, case-sensitive column name match
+- `InputTypeName`: exact, case-sensitive match on `sql.ColumnType.DatabaseTypeName()`
+- `InputTypeRegex`: regex match on the database type name
+- `InputTypeMatcher`: a `func(dbType string) bool` consulted with the database type name
+
+For parameterised or nested types, prefer `InputTypeMatcher` over enumerating
+regex permutations. A single matcher per base converter can unwrap wrapper
+types recursively, so one `Float64` converter covers `Float64`,
+`SimpleAggregateFunction(max, Float64)`,
+`LowCardinality(Float64)` and any nested combination:
+
+```go
+{
+    Name:          "Float64",
+    InputScanType: reflect.TypeOf(float64(0)),
+    InputTypeMatcher: func(dbType string) bool {
+        return unwrapWrapperTypes(dbType) == "Float64" // your recursive unwrap helper
+    },
+    FrameConverter: sqlutil.FrameConverter{
+        FieldType: data.FieldTypeFloat64,
+        ConverterFunc: func(in interface{}) (interface{}, error) {
+            return *(in.(*float64)), nil
+        },
+    },
+}
+```
+
+Order converters from most to least specific: the first match wins, so a
+broad matcher placed early can shadow later converters. The database driver
+must be able to scan the wrapped type into the converter's `InputScanType`.
+
 ### Pluggable interpolator
 
 `SQLDatasource.Interpolator` is a func field that produces the SQL reaching
