@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
@@ -179,5 +180,140 @@ func TestConnector_ConcurrentMissesOnOneKeyKeepOnePool(t *testing.T) {
 		if db != results[0] {
 			t.Fatalf("caller %d received a different pool from caller 0", i)
 		}
+	}
+}
+
+func TestConnector_ConcurrentReconnectsOnOneKeyKeepOnePool(t *testing.T) {
+	const n = 3
+	tests := []struct {
+		name  string
+		cache func(t *testing.T) ConnectionCache
+	}{
+		{name: "sync map cache", cache: func(*testing.T) ConnectionCache { return NewSyncMapCache() }},
+		{name: "idle evicting cache", cache: func(t *testing.T) ConnectionCache {
+			c, _ := newTestIdleCache(t, time.Hour)
+			return c
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			driver := &barrierDriver{arrive: &sync.WaitGroup{}}
+			driver.arrive.Add(1)
+			conn, err := NewConnector(ctx, driver, backend.DataSourceInstanceSettings{UID: "uid"}, true, WithCache(tc.cache(t)))
+			if err != nil {
+				t.Fatalf("NewConnector: %v", err)
+			}
+			t.Cleanup(conn.Dispose)
+			q := &Query{ConnectionArgs: json.RawMessage(`{"grafana-http-headers":{"X-Grafana-User":["alice"]}}`)}
+			key, stale, err := conn.GetConnectionFromQuery(ctx, q)
+			if err != nil {
+				t.Fatalf("GetConnectionFromQuery: %v", err)
+			}
+
+			driver.arrive.Add(n)
+			results := make([]*sql.DB, n)
+			var wg sync.WaitGroup
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					db, err := conn.Reconnect(ctx, stale, q, key)
+					if err != nil {
+						t.Errorf("Reconnect: %v", err)
+						return
+					}
+					results[i] = db
+				}(i)
+			}
+			wg.Wait()
+
+			reopened := driver.opened[1:]
+			open := 0
+			for _, db := range reopened {
+				if !dbClosed(db) {
+					open++
+				}
+			}
+			if len(reopened) != n || open != 1 {
+				t.Fatalf("reconnects opened %d pools with %d still open, want %d opened and exactly 1 open", len(reopened), open, n)
+			}
+			for i, db := range results {
+				if db != results[0] {
+					t.Fatalf("caller %d received a different pool from caller 0", i)
+				}
+			}
+			if dbClosed(results[0]) {
+				t.Fatal("the pool every caller received is closed")
+			}
+			if cached, ok := conn.getDBConnection(key); !ok || cached.db != results[0] {
+				t.Fatal("the cache must hold the pool the callers received")
+			}
+			if !dbClosed(stale.db) {
+				t.Fatal("the replaced pool must be closed")
+			}
+		})
+	}
+}
+
+// recordingDriver records every keyed pool it opens.
+type recordingDriver struct {
+	noopDriver
+	mu     sync.Mutex
+	opened []*sql.DB
+}
+
+func (d *recordingDriver) Connect(_ context.Context, _ backend.DataSourceInstanceSettings, args json.RawMessage) (*sql.DB, error) {
+	db := newLiveTestDB()
+	if len(args) > 0 {
+		d.mu.Lock()
+		d.opened = append(d.opened, db)
+		d.mu.Unlock()
+	}
+	return db, nil
+}
+
+func TestConnector_ReconnectReplacesOnlyThePoolItWasGiven(t *testing.T) {
+	ctx := context.Background()
+	driver := &recordingDriver{}
+	conn, err := NewConnector(ctx, driver, backend.DataSourceInstanceSettings{UID: "uid"}, true)
+	if err != nil {
+		t.Fatalf("NewConnector: %v", err)
+	}
+	t.Cleanup(conn.Dispose)
+	q := &Query{ConnectionArgs: json.RawMessage(`{"grafana-http-headers":{"X-Grafana-User":["alice"]}}`)}
+	key, first, err := conn.GetConnectionFromQuery(ctx, q)
+	if err != nil {
+		t.Fatalf("GetConnectionFromQuery: %v", err)
+	}
+
+	second, err := conn.Reconnect(ctx, first, q, key)
+	if err != nil {
+		t.Fatalf("first Reconnect: %v", err)
+	}
+	if second == first.db || dbClosed(second) || !dbClosed(first.db) {
+		t.Fatal("the first retry must replace the cached pool with a fresh open one and close the old one")
+	}
+
+	third, err := conn.Reconnect(ctx, CachedConnection{db: second, settings: first.settings}, q, key)
+	if err != nil {
+		t.Fatalf("second Reconnect: %v", err)
+	}
+	if third == second || dbClosed(third) || !dbClosed(second) {
+		t.Fatal("a later retry must replace the pool its previous retry opened")
+	}
+
+	late, err := conn.Reconnect(ctx, first, q, key)
+	if err != nil {
+		t.Fatalf("late Reconnect: %v", err)
+	}
+	if late != third || dbClosed(third) {
+		t.Fatal("a caller holding a replaced pool must get the cached pool")
+	}
+	if got := len(driver.opened); got != 4 {
+		t.Fatalf("opened %d keyed pools, want 4", got)
+	}
+	if !dbClosed(driver.opened[3]) {
+		t.Fatal("the pool opened by the late caller must be closed")
 	}
 }
