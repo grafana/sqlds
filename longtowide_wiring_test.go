@@ -1,6 +1,7 @@
 package sqlds
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -16,22 +17,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// longResultDriver is a minimal database/sql driver that serves one
+// longResultConnector is a minimal database/sql connector that serves one
 // time-sorted long result (time, label, value) so getFrames can be exercised
 // with real *sql.Rows.
-type longResultDriver struct {
+type longResultConnector struct {
 	timestamps, series int
 }
 
-func (d *longResultDriver) Open(string) (driver.Conn, error) { return &longResultConn{d: d}, nil }
+func (d *longResultConnector) Connect(context.Context) (driver.Conn, error) {
+	return &longResultConn{d: d}, nil
+}
+func (d *longResultConnector) Driver() driver.Driver { return nil }
 
-type longResultConn struct{ d *longResultDriver }
+type longResultConn struct{ d *longResultConnector }
 
 func (c *longResultConn) Prepare(string) (driver.Stmt, error) { return &longResultStmt{d: c.d}, nil }
 func (c *longResultConn) Close() error                        { return nil }
 func (c *longResultConn) Begin() (driver.Tx, error)           { return nil, errors.New("not implemented") }
 
-type longResultStmt struct{ d *longResultDriver }
+type longResultStmt struct{ d *longResultConnector }
 
 func (s *longResultStmt) Close() error  { return nil }
 func (s *longResultStmt) NumInput() int { return 0 }
@@ -43,7 +47,7 @@ func (s *longResultStmt) Query([]driver.Value) (driver.Rows, error) {
 }
 
 type longResultRows struct {
-	d   *longResultDriver
+	d   *longResultConnector
 	row int
 }
 
@@ -75,11 +79,9 @@ func (r *longResultRows) Next(dest []driver.Value) error {
 	return nil
 }
 
-func queryLongResult(t *testing.T, name string, timestamps, series int) *sql.Rows {
+func queryLongResult(t *testing.T, timestamps, series int) *sql.Rows {
 	t.Helper()
-	sql.Register(name, &longResultDriver{timestamps: timestamps, series: series})
-	db, err := sql.Open(name, "")
-	require.NoError(t, err)
+	db := sql.OpenDB(&longResultConnector{timestamps: timestamps, series: series})
 	t.Cleanup(func() { _ = db.Close() })
 	rows, err := db.Query("select long result")
 	require.NoError(t, err)
@@ -91,7 +93,7 @@ func TestGetFramesLongToWideCellLimit(t *testing.T) {
 
 	t.Run("over-budget results are rejected", func(t *testing.T) {
 		// 4 timestamps x (1 + 3 series x 1 value) = 16 cells
-		rows := queryLongResult(t, "sqlds-longtowide-over", 4, 3)
+		rows := queryLongResult(t, 4, 3)
 		_, err := getFrames(rows, -1, 0, 15, nil, nil, query)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, data.ErrorWideFrameTooLarge))
@@ -99,7 +101,7 @@ func TestGetFramesLongToWideCellLimit(t *testing.T) {
 	})
 
 	t.Run("a negative limit disables the guard", func(t *testing.T) {
-		rows := queryLongResult(t, "sqlds-longtowide-disabled", 4, 3)
+		rows := queryLongResult(t, 4, 3)
 		frames, err := getFrames(rows, -1, 0, -1, nil, nil, query)
 		require.NoError(t, err)
 		require.Len(t, frames, 1)
@@ -107,7 +109,7 @@ func TestGetFramesLongToWideCellLimit(t *testing.T) {
 	})
 
 	t.Run("under-budget results pivot normally", func(t *testing.T) {
-		rows := queryLongResult(t, "sqlds-longtowide-under", 4, 3)
+		rows := queryLongResult(t, 4, 3)
 		frames, err := getFrames(rows, -1, 0, 16, nil, nil, query)
 		require.NoError(t, err)
 		require.Len(t, frames, 1)
