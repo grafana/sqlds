@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [5.4.0]
 
 ### Added
 
@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A `*sql.DB` that `Reconnect` or `GetConnectionFromQuery` opens after the `Connector` is disposed is no longer cached, and is closed when the request's context ends. Nothing closed it before, so each such retry leaked a pool by @adamyeats in #315
+
+### Documentation
+
+- Document converter matching for driver-supplied converters, including `InputTypeMatcher` for parameterised column types by @adamyeats in #297
+
+### Dependencies
+
+- chore: bumps to fix some go vulnerabilities by @njvrzm in #306
+- fix(deps): update backend dependencies by @renovate-sh-app[bot] in #300
+- fix(deps): update backend dependencies by @renovate-sh-app[bot] in #308
+- chore(deps): update module github.com/prometheus/procfs to v0.23.0 by @renovate-sh-app[bot] in #318
+- chore(deps): update github actions to v7 and the MySQL test image to 26.7 by @renovate-sh-app[bot] in #310
 
 ## [5.3.1]
 
