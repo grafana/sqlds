@@ -181,8 +181,6 @@ func (ds *SQLDatasource) Dispose() {
 
 // QueryData creates the Responses list and executes each query
 func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
-	headers := req.GetHTTPHeaders()
-
 	var (
 		response = NewResponse(backend.NewQueryDataResponse())
 		wg       = sync.WaitGroup{}
@@ -193,6 +191,7 @@ func (ds *SQLDatasource) QueryData(ctx context.Context, req *backend.QueryDataRe
 	if ds.queryDataMutator != nil {
 		ctx, req = ds.queryDataMutator.MutateQueryData(ctx, req)
 	}
+	headers := req.GetHTTPHeaders()
 
 	// Execute each query and store the results by query RefID
 	for _, q := range req.Queries {
@@ -333,6 +332,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 				if err != nil {
 					return nil, backend.DownstreamError(err)
 				}
+				dbConn = CachedConnection{db: db, settings: dbConn.settings}
 
 				if settings.Pause > 0 {
 					time.Sleep(time.Duration(settings.Pause * int(time.Second)))
@@ -369,6 +369,7 @@ func (ds *SQLDatasource) handleQuery(ctx context.Context, req backend.DataQuery,
 			if err != nil {
 				continue
 			}
+			dbConn = CachedConnection{db: db, settings: dbConn.settings}
 
 			dbQuery := NewQuery(db, dbConn.settings, ds.cachedConverters, fillMode, ds.rowLimit).
 				WithRowCapacityHint(ds.rowCapacityHint)
