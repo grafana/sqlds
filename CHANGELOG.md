@@ -1,9 +1,8 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+For releases after 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Entries for 5.4.0 and older follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [5.4.0]
 
@@ -537,14 +536,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## About
 
 This changelog documents changes for the `sqlds` package, which provides a common foundation for SQL-driven datasources in Grafana. The package centralizes common SQL datasource logic to reduce code duplication across datasources like Postgres, MySQL, and MSSQL.
-
-### Categories
-
-- **Added**: New features
-- **Changed**: Changes in existing functionality
-- **Deprecated**: Soon-to-be removed features
-- **Removed**: Removed features
-- **Fixed**: Bug fixes
-- **Security**: Vulnerability fixes
-- **Dependencies**: Dependency updates
-- **Infrastructure**: CI/CD and tooling changes
