@@ -64,7 +64,9 @@ type DBQuery struct {
 	converters      []sqlutil.Converter
 	rowLimit        int64
 	rowCapacityHint int64
-	thresholds      responseobs.Thresholds
+	// longToWideCellLimit stays unresolved so DBQuery values built via NewQuery share the default.
+	longToWideCellLimit int64
+	thresholds          responseobs.Thresholds
 }
 
 func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, converters []sqlutil.Converter, fillMode *data.FillMissing, rowLimit int64) *DBQuery {
@@ -85,6 +87,14 @@ func NewQuery(db Connection, settings backend.DataSourceInstanceSettings, conver
 // chaining after NewQuery.
 func (q *DBQuery) WithRowCapacityHint(hint int64) *DBQuery {
 	q.rowCapacityHint = hint
+	return q
+}
+
+// WithLongToWideCellLimit caps the wide frame the time-series format builds
+// from a long result, in cells. 0 applies the default of 10,000,000 cells and
+// a negative value disables the limit. Returns the receiver to allow chaining.
+func (q *DBQuery) WithLongToWideCellLimit(limit int64) *DBQuery {
+	q.longToWideCellLimit = limit
 	return q
 }
 
@@ -163,7 +173,7 @@ func (q *DBQuery) convertRowsToFrames(ctx context.Context, rows *sql.Rows, query
 		q.metrics.CollectDuration(source, status, time.Since(start).Seconds())
 	}()
 
-	res, err := getFrames(rows, q.rowLimit, q.rowCapacityHint, q.converters, q.fillMode, query)
+	res, err := getFrames(rows, q.rowLimit, q.rowCapacityHint, q.longToWideCellLimit, q.converters, q.fillMode, query)
 	if err != nil {
 		status = StatusError
 
@@ -220,7 +230,7 @@ func (q *DBQuery) observeResponseSize(ctx context.Context, frames data.Frames, r
 // If capacity > 0, the Frame's Fields are presized via
 // sqlutil.FrameFromRowsWithCapacity to avoid per-column slice growth during
 // scanning. Passing 0 preserves the historical FrameFromRows behavior.
-func getFrames(rows *sql.Rows, limit int64, capacity int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
+func getFrames(rows *sql.Rows, limit int64, capacity int64, wideCellLimit int64, converters []sqlutil.Converter, fillMode *data.FillMissing, query *Query) (data.Frames, error) {
 	// Validate rows before processing to prevent panics
 	if err := validateRows(rows); err != nil {
 		backend.Logger.Error("Invalid SQL rows", "error", err.Error())
@@ -290,7 +300,10 @@ func getFrames(rows *sql.Rows, limit int64, capacity int64, converters []sqlutil
 		}
 
 		if frame.TimeSeriesSchema().Type == data.TimeSeriesTypeLong {
-			frame, err = data.LongToWide(frame, fillMode)
+			frame, err = data.LongToWideWithLimit(frame, fillMode, resolveLongToWideCellLimit(wideCellLimit))
+			if errors.Is(err, data.ErrorWideFrameTooLarge) {
+				return nil, backend.DownstreamError(err)
+			}
 			if err != nil {
 				return nil, err
 			}
