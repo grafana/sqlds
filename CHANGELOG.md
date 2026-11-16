@@ -1,33 +1,22 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Changed
-
-- The time-series format caps the wide frame built by the long-to-wide pivot at `DriverSettings.LongToWideCellLimit` cells (default 10,000,000). A long result that pivots past the limit fails with a downstream `data.ErrorWideFrameTooLarge` instead of expanding to rows x series cells and exhausting the plugin process's memory. Queries that previously returned very large wide frames now return an error. Set `LongToWideCellLimit: -1` to restore the old behaviour by @adamyeats in #307
+For releases after 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Entries for 5.4.0 and older follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [5.4.0]
 
 ### Added
 
-- `NewIdleEvictingCache`: a `ConnectionCache` that closes a pool once no query has used it for a set idle time. Drivers that open one pool per forwarded header set install it through `ConnectionCacheFactory`, by @adamyeats in #313
 - `DriverSettings.MaxOpenConns`, `MaxIdleConns` and `ConnMaxLifetime` let a driver bound the pool of every `*sql.DB` sqlds caches for a data source; zero falls back to the Grafana `[sql_datasources]` defaults by @adamyeats in #311
 
 ### Changed
 
-- `QueryData` reads the forwarded HTTP headers after `MutateQueryData`. A driver's mutator can add or remove headers before sqlds forwards them to `Connect` and keys pools on them, by @adamyeats in #313
+- The `Connector` now applies the Grafana `[sql_datasources]` defaults (100 open, 100 idle, 4 hour lifetime when unset) to every `*sql.DB` it opens, unless the driver sets `DriverSettings` pool fields or bounds the pool itself inside `Connect`. Pools were previously unbounded for every driver except ClickHouse by @adamyeats in #311
 
 ### Fixed
 
-- `GetConnectionFromQuery` closes the pool it opened when a concurrent query stored one for the same key first. Both pools were kept before, and the unreachable one leaked a goroutine and its connections, by @adamyeats in #313
-- `Reconnect` replaces the cached pool only while the cache still holds the pool it was given, and otherwise returns the cached one. When queries on one key retried at the same time, each stored its own pool. The default cache leaked all but the last one, and `NewIdleEvictingCache` closed them before their queries retried, by @adamyeats in #313
 - A `*sql.DB` that `Reconnect` or `GetConnectionFromQuery` opens after the `Connector` is disposed is no longer cached, and is closed when the request's context ends. Nothing closed it before, so each such retry leaked a pool by @adamyeats in #315
-- The `Connector` now applies the Grafana `[sql_datasources]` defaults (100 open, 100 idle, 4 hour lifetime when unset) to every `*sql.DB` it opens, unless the driver sets `DriverSettings` pool fields or bounds the pool itself inside `Connect`. Pools were previously unbounded for every driver except ClickHouse by @adamyeats in #311
 
 ### Documentation
 
@@ -543,14 +532,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## About
 
 This changelog documents changes for the `sqlds` package, which provides a common foundation for SQL-driven datasources in Grafana. The package centralizes common SQL datasource logic to reduce code duplication across datasources like Postgres, MySQL, and MSSQL.
-
-### Categories
-
-- **Added**: New features
-- **Changed**: Changes in existing functionality
-- **Deprecated**: Soon-to-be removed features
-- **Removed**: Removed features
-- **Fixed**: Bug fixes
-- **Security**: Vulnerability fixes
-- **Dependencies**: Dependency updates
-- **Infrastructure**: CI/CD and tooling changes
