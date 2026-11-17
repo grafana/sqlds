@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 For releases after 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Entries for 5.4.0 and older follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.0](https://github.com/grafana/sqlds/compare/v5.4.0...v5.5.0) (2026-11-17)
+
+
+### 🎉 Features
+
+* **connector:** evict idle pools and read forwarded headers after MutateQueryData ([#313](https://github.com/grafana/sqlds/issues/313)) ([06b468e](https://github.com/grafana/sqlds/commit/06b468e86be8eb08088628cb8c064efc087c35aa))
+
+
+### 🐛 Bug Fixes
+
+* cap the long-to-wide pivot at a configurable cell limit ([#307](https://github.com/grafana/sqlds/issues/307)) ([fbb066a](https://github.com/grafana/sqlds/commit/fbb066a2b9ae2dbc1e24cf877336dd52e3a48e50))
+* **deps:** update backend dependencies ([#319](https://github.com/grafana/sqlds/issues/319)) ([dc019d9](https://github.com/grafana/sqlds/commit/dc019d984f0ebc90e9c5c99cb4e9d4414dc0ee3e))
+* **deps:** update backend dependencies ([#321](https://github.com/grafana/sqlds/issues/321)) ([1743789](https://github.com/grafana/sqlds/commit/17437890d79530903a9fcb1880f1d049d4936884))
+* **deps:** update module github.com/grafana/grafana-plugin-sdk-go to v0.299.0 ([#322](https://github.com/grafana/sqlds/issues/322)) ([a3865ed](https://github.com/grafana/sqlds/commit/a3865ed128370c4fc8c1ce15a2803d99e5a60549))
+
+
+### 🤖 Continuous Integration
+
+* enforce conventional commit pr titles and adopt release-please ([#312](https://github.com/grafana/sqlds/issues/312)) ([7febf1c](https://github.com/grafana/sqlds/commit/7febf1cebc68aee34b2ffc3eddf2e87e9f5191c0))
+
 ## [5.4.0]
 
 ### Added
