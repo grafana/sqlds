@@ -111,3 +111,45 @@ func TestHealthChecker_Check(t *testing.T) {
 		})
 	}
 }
+
+func TestHealthChecker_Check_ErrorSource(t *testing.T) {
+	t.Run("a failed connection is reported as a downstream error", func(t *testing.T) {
+		hc := &sqlds.HealthChecker{Connector: getFakeConnector(t, true)}
+
+		got, err := hc.Check(context.Background(), &backend.CheckHealthRequest{})
+		require.NoError(t, err)
+		require.Equal(t, backend.HealthStatusError, got.Status)
+		assert.Equal(t, backend.ErrorSourceDownstream, got.ErrorSource)
+	})
+
+	t.Run("a missing connection is reported as a plugin error", func(t *testing.T) {
+		hc := &sqlds.HealthChecker{Connector: &sqlds.Connector{}}
+
+		got, err := hc.Check(context.Background(), &backend.CheckHealthRequest{})
+		require.NoError(t, err)
+		require.Equal(t, backend.HealthStatusError, got.Status)
+		assert.Equal(t, backend.ErrorSourcePlugin, got.ErrorSource)
+	})
+
+	t.Run("a healthy check has no error source", func(t *testing.T) {
+		hc := &sqlds.HealthChecker{Connector: getFakeConnector(t, false)}
+
+		got, err := hc.Check(context.Background(), &backend.CheckHealthRequest{})
+		require.NoError(t, err)
+		require.Equal(t, backend.HealthStatusOk, got.Status)
+		assert.Equal(t, backend.ErrorSource(""), got.ErrorSource)
+	})
+
+	t.Run("a result returned by a check hook is not changed", func(t *testing.T) {
+		hc := &sqlds.HealthChecker{
+			Connector: getFakeConnector(t, false),
+			PreCheckHealth: func(context.Context, *backend.CheckHealthRequest) *backend.CheckHealthResult {
+				return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: "bad config", ErrorSource: backend.ErrorSourceDownstream}
+			},
+		}
+
+		got, err := hc.Check(context.Background(), &backend.CheckHealthRequest{})
+		require.NoError(t, err)
+		assert.Equal(t, backend.ErrorSourceDownstream, got.ErrorSource)
+	})
+}
