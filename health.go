@@ -24,9 +24,6 @@ func (hc *HealthChecker) Check(ctx context.Context, req *backend.CheckHealthRequ
 	}
 	if _, err := hc.Connector.Connect(ctx, req.GetHTTPHeaders()); err != nil {
 		hc.Metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
-		// Carry the error's source onto the result. The error is flattened into a message here, so
-		// without this the host cannot tell a connection failure of the datasource (downstream)
-		// from a plugin error and counts it as a plugin error.
 		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error(), ErrorSource: ErrorSource(err)}, nil
 	}
 	if hc.PostCheckHealth != nil {
