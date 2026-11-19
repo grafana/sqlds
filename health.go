@@ -24,7 +24,7 @@ func (hc *HealthChecker) Check(ctx context.Context, req *backend.CheckHealthRequ
 	}
 	if _, err := hc.Connector.Connect(ctx, req.GetHTTPHeaders()); err != nil {
 		hc.Metrics.CollectDuration(SourceDownstream, StatusError, time.Since(start).Seconds())
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error()}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error(), ErrorSource: ErrorSource(err)}, nil
 	}
 	if hc.PostCheckHealth != nil {
 		if res := hc.PostCheckHealth(ctx, req); res != nil && res.Status == backend.HealthStatusError {
