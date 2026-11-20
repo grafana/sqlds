@@ -3,8 +3,10 @@ package sqlds
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -124,6 +126,29 @@ func TestQuery_Timeout(t *testing.T) {
 			t.Fatal("expected function to complete, received error: ", err)
 		}
 	})
+}
+
+func TestApplyHeaders_NullConnectionArgs(t *testing.T) {
+	headers := http.Header{"X-Test": []string{"value"}}
+
+	for _, tc := range []struct {
+		name string
+		args []byte
+	}{
+		{name: "null", args: []byte("null")},
+		{name: "padded null", args: []byte(" null ")},
+		{name: "empty object", args: []byte("{}")},
+		{name: "unset", args: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &Query{ConnectionArgs: tc.args}
+			require.NotPanics(t, func() { applyHeaders(q, headers) })
+
+			var got map[string]http.Header
+			require.NoError(t, json.Unmarshal(q.ConnectionArgs, &got))
+			assert.Equal(t, headers, got[HeaderKey])
+		})
+	}
 }
 
 func TestFixFrameForLongToMulti(t *testing.T) {
