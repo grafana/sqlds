@@ -439,6 +439,10 @@ func applyHeadersSlow(query *Query, headerBytes []byte) *Query {
 		backend.Logger.Warn(fmt.Sprintf("Failed to apply headers: %s", err.Error()))
 		return query
 	}
+	if args == nil {
+		// connectionArgs may be a JSON null, which decodes to a nil map
+		args = map[string]any{}
+	}
 	args[HeaderKey] = json.RawMessage(headerBytes)
 	raw, err := json.Marshal(args)
 	if err != nil {
