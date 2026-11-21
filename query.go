@@ -64,7 +64,7 @@ type DBQuery struct {
 	converters      []sqlutil.Converter
 	rowLimit        int64
 	rowCapacityHint int64
-	// longToWideCellLimit stays unresolved so DBQuery values built via NewQuery share the default.
+	// longToWideCellLimit stays unresolved so GF_PLUGIN_LONG_TO_WIDE_CELL_LIMIT also reaches DBQuery values built via NewQuery.
 	longToWideCellLimit int64
 	thresholds          responseobs.Thresholds
 }
@@ -91,8 +91,9 @@ func (q *DBQuery) WithRowCapacityHint(hint int64) *DBQuery {
 }
 
 // WithLongToWideCellLimit caps the wide frame the time-series format builds
-// from a long result, in cells. 0 applies the default of 10,000,000 cells and
-// a negative value disables the limit. Returns the receiver to allow chaining.
+// from a long result, in cells. 0 or a negative value disables the limit, and
+// GF_PLUGIN_LONG_TO_WIDE_CELL_LIMIT, when set, takes precedence. Returns the
+// receiver to allow chaining.
 func (q *DBQuery) WithLongToWideCellLimit(limit int64) *DBQuery {
 	q.longToWideCellLimit = limit
 	return q
