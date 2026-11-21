@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 For releases after 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Entries for 5.4.0 and older follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.1](https://github.com/grafana/sqlds/compare/v5.5.0...v5.5.1) (2026-11-21)
+
+
+### 🐛 Bug Fixes
+
+* do not panic on null connectionArgs when forwarding headers ([#328](https://github.com/grafana/sqlds/issues/328)) ([9aef470](https://github.com/grafana/sqlds/commit/9aef470148d447da6cdaa1d62a819d7d5b66b17b))
+* **query:** handle null connectionArgs when forwarding headers ([9aef470](https://github.com/grafana/sqlds/commit/9aef470148d447da6cdaa1d62a819d7d5b66b17b))
+
 ## [5.5.0](https://github.com/grafana/sqlds/compare/v5.4.0...v5.5.0) (2026-11-17)
 
 
