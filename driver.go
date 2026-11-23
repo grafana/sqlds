@@ -32,8 +32,8 @@ type DriverSettings struct {
 	RowCapacityHint int64
 	// LongToWideCellLimit caps the wide frame the time-series format builds
 	// from a long result, in cells (rows x fields). A query that pivots past
-	// the limit fails with a downstream error. 0 applies the default of
-	// 10,000,000 cells and a negative value disables the limit.
+	// the limit fails with a downstream error. 0 or a negative value disables
+	// the limit. GF_PLUGIN_LONG_TO_WIDE_CELL_LIMIT, when set, takes precedence.
 	LongToWideCellLimit int64
 	// ResponseThresholds configures when a query response is considered
 	// "large" enough to emit a structured warn log. A zero value on
