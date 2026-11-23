@@ -1,16 +1,29 @@
 package sqlds
 
-// A 10,000,000-cell wide frame costs 80-160MB before Arrow marshaling, past the response sizes Grafana can deliver.
-const defaultLongToWideCellLimit = int64(10_000_000)
+import (
+	"os"
+	"strconv"
+	"sync"
 
-// resolveLongToWideCellLimit maps DriverSettings.LongToWideCellLimit (0 means the
-// default, negative means no limit) onto the SDK convention, where 0 means no limit.
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+)
+
+const envLongToWideCellLimit = "GF_PLUGIN_LONG_TO_WIDE_CELL_LIMIT"
+
+var warnInvalidLongToWideCellLimit sync.Once
+
+// resolveLongToWideCellLimit maps a cell limit onto the SDK convention, where 0 means no limit.
+// A valid GF_PLUGIN_LONG_TO_WIDE_CELL_LIMIT takes precedence over v.
 func resolveLongToWideCellLimit(v int64) int64 {
-	if v == 0 {
-		return defaultLongToWideCellLimit
+	if s := os.Getenv(envLongToWideCellLimit); s != "" {
+		limit, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			warnInvalidLongToWideCellLimit.Do(func() {
+				backend.Logger.Warn("ignoring invalid long-to-wide cell limit", "env", envLongToWideCellLimit, "value", s, "error", err)
+			})
+		} else {
+			v = limit
+		}
 	}
-	if v < 0 {
-		return 0
-	}
-	return v
+	return max(v, 0)
 }

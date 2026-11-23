@@ -115,4 +115,20 @@ func TestGetFramesLongToWideCellLimit(t *testing.T) {
 		require.Len(t, frames, 1)
 		assert.Equal(t, data.TimeSeriesTypeWide, frames[0].TimeSeriesSchema().Type)
 	})
+
+	t.Run("an unset limit pivots without a cap", func(t *testing.T) {
+		t.Setenv(envLongToWideCellLimit, "")
+		rows := queryLongResult(t, 4, 3)
+		frames, err := getFrames(rows, -1, 0, 0, nil, nil, query)
+		require.NoError(t, err)
+		require.Len(t, frames, 1)
+	})
+
+	t.Run("the env limit rejects when the setting is unset", func(t *testing.T) {
+		t.Setenv(envLongToWideCellLimit, "15")
+		rows := queryLongResult(t, 4, 3)
+		_, err := getFrames(rows, -1, 0, 0, nil, nil, query)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, data.ErrorWideFrameTooLarge))
+	})
 }
