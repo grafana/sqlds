@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 For releases after 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Entries for 5.4.0 and older follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.0](https://github.com/grafana/sqlds/compare/v5.5.0...v5.6.0) (2026-11-23)
+
+
+### 🎉 Features
+
+* **longtowide:** turn the cell limit off by default and read GF_PLUGIN_LONG_TO_WIDE_CELL_LIMIT ([#330](https://github.com/grafana/sqlds/issues/330)) ([0ca0770](https://github.com/grafana/sqlds/commit/0ca0770e4e9b801599a84318d06ac3c4d0ee352d))
+
+
+### 🐛 Bug Fixes
+
+* do not panic on null connectionArgs when forwarding headers ([#328](https://github.com/grafana/sqlds/issues/328)) ([9aef470](https://github.com/grafana/sqlds/commit/9aef470148d447da6cdaa1d62a819d7d5b66b17b))
+* **health:** report connection failures as downstream errors ([#326](https://github.com/grafana/sqlds/issues/326)) ([1b8c09d](https://github.com/grafana/sqlds/commit/1b8c09dfda971ebe54622d41eb08ec39002ca1a7))
+* **query:** handle null connectionArgs when forwarding headers ([9aef470](https://github.com/grafana/sqlds/commit/9aef470148d447da6cdaa1d62a819d7d5b66b17b))
+
 ## [5.5.0](https://github.com/grafana/sqlds/compare/v5.4.0...v5.5.0) (2026-11-17)
 
 
