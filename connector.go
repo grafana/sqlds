@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/config"
+	"github.com/grafana/sqlds/v5/pool"
 )
 
 type Connector struct {
@@ -223,39 +223,11 @@ func (c *Connector) applyPoolSettings(ctx context.Context, db *sql.DB) {
 	if db == nil || db.Stats().MaxOpenConnections > 0 {
 		return
 	}
-	defaults, ok := grafanaSQLDefaults(ctx)
-	if n, set := pick(c.driverSettings.MaxOpenConns, defaults.DefaultMaxOpenConns, ok); set {
-		db.SetMaxOpenConns(n)
-	}
-	if n, set := pick(c.driverSettings.MaxIdleConns, defaults.DefaultMaxIdleConns, ok); set {
-		db.SetMaxIdleConns(n)
-	}
-	lifetime := time.Duration(defaults.DefaultMaxConnLifetimeSeconds) * time.Second
-	if d, set := pick(c.driverSettings.ConnMaxLifetime, lifetime, ok); set {
-		db.SetConnMaxLifetime(d)
-	}
-}
-
-// grafanaSQLDefaults reads the [sql_datasources] defaults Grafana injects
-// into the plugin environment. SQL() fails when they are absent, which is
-// the case on Grafana versions that predate the injection and on a bare
-// context.
-func grafanaSQLDefaults(ctx context.Context) (config.SQLConfig, bool) {
-	sqlCfg, err := config.GrafanaConfigFromContext(ctx).SQL()
-	if err != nil {
-		backend.Logger.Debug("grafana sql pool defaults unavailable", "error", err)
-		return config.SQLConfig{}, false
-	}
-	return sqlCfg, true
-}
-
-// pick resolves one pool knob: a non-zero driver value wins, otherwise the
-// Grafana default applies when one is available.
-func pick[T ~int | ~int64](driver, grafana T, haveGrafana bool) (T, bool) {
-	if driver != 0 {
-		return driver, true
-	}
-	return grafana, haveGrafana
+	pool.ApplySQLLimits(ctx, db, pool.SQLLimits{
+		MaxOpenConns:    c.driverSettings.MaxOpenConns,
+		MaxIdleConns:    c.driverSettings.MaxIdleConns,
+		ConnMaxLifetime: c.driverSettings.ConnMaxLifetime,
+	})
 }
 
 // connCache returns the Connector's ConnectionCache, lazily installing the
