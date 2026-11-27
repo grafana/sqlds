@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 For releases after 5.4.0, [release-please](https://github.com/googleapis/release-please) generates each entry from the Conventional Commits PR titles merged since the previous release. Entries for 5.4.0 and older follow the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format. This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.1](https://github.com/grafana/sqlds/compare/v5.6.0...v5.6.1) (2026-11-27)
+
+
+### 🐛 Bug Fixes
+
+* **health:** record the error source of a failed connection in metrics ([#331](https://github.com/grafana/sqlds/issues/331)) ([01ef914](https://github.com/grafana/sqlds/commit/01ef914a4e7a409a610608ca79c6585e3f7a2e6c))
+
 ## [5.6.0](https://github.com/grafana/sqlds/compare/v5.5.0...v5.6.0) (2026-11-23)
 
 
